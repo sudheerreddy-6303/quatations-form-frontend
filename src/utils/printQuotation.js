@@ -1,0 +1,438 @@
+// printQuotation.js
+// Generates a browser-printable HTML window from quotation data
+// Uses the EXACT same layout as the ViewModal, plus watermark
+
+const LOGO_URL = 'https://img1.wsimg.com/isteam/ip/e7e3142b-3f26-4173-bc29-b2315178edb8/DI%20logo%20(2).png/:/rs=w:559,h:192,cg:true,m/cr=w:559,h:192/qt=q:95';
+
+const SECTION_META = {
+  ceiling:    { label: 'CEILING WORK',           color: '#1D4ED8', bg: '#EFF6FF' },
+  electrical: { label: 'ELECTRICAL ACCESSORIES', color: '#A16207', bg: '#FEFCE8' },
+  wooden:     { label: 'WOODEN ACCESSORIES',     color: '#9A3412', bg: '#FFF7ED' },
+  marble:     { label: 'MARBLE & PLUMBING',      color: '#166534', bg: '#F0FDF4' },
+  general:    { label: 'GENERAL',                color: '#6D28D9', bg: '#F5F3FF' },
+};
+
+function fmtINR(n) { return 'Rs. ' + Number(n||0).toLocaleString('en-IN'); }
+
+function calcArea(item) {
+  if (item.type === 'FIXED' || (!item.width && !item.height)) return 0;
+  return parseFloat(((item.width * item.height * item.nos) / 144).toFixed(1));
+}
+function calcTotal(item) {
+  if (item.type === 'FIXED') return (item.unitCost || 0) * (item.nos || 1);
+  if (!item.width && !item.height) return item.nos * item.unitCost;
+  return Math.round(calcArea(item) * item.unitCost);
+}
+
+const NOTES = [
+  'Sylvan 30 years for Kitchen and 21 years BWP 710 for other areas will be Provided.',
+  'Hardware Hinges "Hettich Brand" Total House Soft closing will be Provided.',
+  'Kitchen Tandem Baskets will be Provided Hettich brand.',
+  'All civil works, granite & tiles will be extra costing.',
+  'All electrical fittings and accessories not included in above quotation.',
+  'Handles 4" & 6" and 8" (price range upto Rs.500 per Handle) will be provided.',
+  'Only kitchen base will be g-profile or gola profile.',
+  'Laminates (Price Range from Rs.2000 to Rs.2500) will be provided.',
+  'It will be approximate estimation, based on actual Designs & dimensions it will be changed.',
+  'Fully Factory finishing Except TV Unit, Partition, Wall Elevation.',
+  'Booking Advance 10%.',
+];
+
+const PAY_STAGES = [
+  'Booking Advance','After Design','Material Purchase time',
+  'Carcas Installation','Doors Fitting','Handles Fitting',
+  'Finishing and Hand Over',''
+];
+
+const PAY_TC = [
+  ['Booking Advance:', 'A non-refundable commitment fee required to initiate the project.'],
+  ['Post-Design Payment:', 'Due upon final approval of 2D/3D designs. Procurement begins only after this is cleared.'],
+  ['Material Procurement:', 'Covers raw materials and hardware. Vendor orders placed only after funds are credited.'],
+  ['Carcass Installation:', 'Due upon completion of basic structure. Finishing works commence after this payment.'],
+  ['Work Suspension:', 'Work suspended if a stage payment is delayed by more than 3 business days.'],
+  ['Material Price Escalation:', 'If "Material Purchase" is deferred 15+ days, any price increase will be billed additionally.'],
+  ['Storage Charges:', 'If handover is deferred, a storage fee of 1% of invoice value per week applies.'],
+  ['Warranty:', 'The 6-month hardware warranty is valid only after full payment.'],
+];
+
+function pageHeader(invoiceDate, smPhone, showLabel, quotationId) {
+  return `
+    <div class="page-header-bar">
+      <img src="${LOGO_URL}" alt="Deeraj Interiors" class="logo-img" crossorigin="anonymous"/>
+      <div style="text-align:right">
+        ${showLabel ? `<div class="quotation-label">QUOTATION #${quotationId||''}</div>` : ''}
+        <div class="header-meta">Date: ${invoiceDate}</div>
+        <div class="header-meta">${smPhone ? 'Mobile: '+smPhone : 'Mobile: 9000700930 / 910'}</div>
+        ${showLabel ? '<div class="header-meta">Interior work Estimation for the proposed plan.</div>' : ''}
+      </div>
+    </div>
+    <div class="brand-line"></div>
+  `;
+}
+
+function tableSection(label, items, isAccessory, color='#E8471C', bg='#FFF0EC') {
+  if (!items || !items.length) return '';
+  const total = isAccessory
+    ? items.reduce((s,it) => s + (it.nos * it.unitCost), 0)
+    : items.reduce((s,it) => s + calcTotal(it), 0);
+
+  const header = isAccessory
+    ? `<th style="width:38%;text-align:left">ITEM</th>
+       <th style="width:12%;text-align:center">QTY</th>
+       <th style="width:20%;text-align:right">UNIT COST (Rs.)</th>
+       <th style="width:14%;text-align:right">TOTAL (Rs.)</th>
+       <th style="width:16%;text-align:left">REMARKS</th>`
+    : `<th style="width:26%;text-align:left">PARTICULARS</th>
+       <th style="width:6%;text-align:center">W(in)</th>
+       <th style="width:6%;text-align:center">H(in)</th>
+       <th style="width:5%;text-align:center">NOS</th>
+       <th style="width:7%;text-align:center">AREA sft</th>
+       <th style="width:9%;text-align:center">TYPE</th>
+       <th style="width:12%;text-align:right">RATE(Rs.)</th>
+       <th style="width:13%;text-align:right">TOTAL(Rs.)</th>
+       <th style="width:16%;text-align:left">REMARKS</th>`;
+
+  const rows = items.map((it, i) => {
+    const area = calcArea(it);
+    const tot  = calcTotal(it);
+    const bg2  = i % 2 === 1 ? '#FAFAFA' : '#fff';
+    if (isAccessory) {
+      return `<tr style="background:${bg2}">
+        <td>${it.name||''}</td>
+        <td style="text-align:center">${it.nos||0}</td>
+        <td style="text-align:right">${(it.unitCost||0).toLocaleString('en-IN')}</td>
+        <td style="text-align:right;color:#E8471C;font-weight:700">${(it.nos*it.unitCost).toLocaleString('en-IN')}</td>
+        <td>${it.remarks||''}</td>
+      </tr>`;
+    }
+    return `<tr style="background:${bg2}">
+      <td>${it.name||''}</td>
+      <td style="text-align:center">${it.type!=='FIXED'?(it.width||''):''}</td>
+      <td style="text-align:center">${it.type!=='FIXED'?(it.height||''):''}</td>
+      <td style="text-align:center">${it.nos||0}</td>
+      <td style="text-align:center">${area||'—'}</td>
+      <td style="text-align:center">${it.type||''}</td>
+      <td style="text-align:right">${(it.unitCost||0).toLocaleString('en-IN')}</td>
+      <td style="text-align:right;color:#E8471C;font-weight:700">${tot.toLocaleString('en-IN')}</td>
+      <td>${it.remarks||''}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="section-label-bar" style="border-left:3px solid ${color};background:${bg}">
+      <span style="font-weight:700;font-size:9pt;color:#1A1A1A;letter-spacing:0.3px">${label.toUpperCase()}</span>
+      <span style="font-weight:700;font-size:9pt;color:${color}">${fmtINR(total)}</span>
+    </div>
+    <table class="data-table">
+      <colgroup><col/></colgroup>
+      <thead><tr>${header}</tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+export function printQuotation(data) {
+  const rooms  = data.rooms || {};
+  const rawCd  = data.ceiling_data || {};
+  const isNewFmt = rawCd.ceiling||rawCd.electrical||rawCd.wooden||rawCd.marble||rawCd.general;
+  const sections = isNewFmt ? rawCd : null;
+  const cd = !isNewFmt ? rawCd : {};
+
+  const totalInterior = Number(data.total_interior||0);
+  const totalCeiling  = Number(data.total_ceiling ||0);
+  const subtotal      = totalInterior + totalCeiling;
+  const gstPercent    = Number(data.gst_percent||0);
+  const gstAmount     = Number(data.gst_amount ||0);
+  const grandTotal    = Number(data.grand_total ||0);
+
+  const smName   = data.site_manager_name || '';
+  const smDesig  = data.site_manager_designation || 'Site Manager';
+  const smPhone  = data.site_manager_phone || '';
+  const smBranch = data.site_manager_branch || '';
+
+  const dash = (v) => (v && String(v).trim()) ? String(v).trim() : '—';
+
+  const clientAltPhone  = dash(data.customer_alt_phone);
+  const clientAddress   = dash(data.full_address);
+  const clientPincode   = dash(data.pincode);
+  const clientVilla     = dash(data.villa_number);
+  const clientSiteName  = dash(data.site_name);
+  const clientLocation  = dash(data.location);
+  const projectType     = dash(data.project_type);
+
+  const createdAt   = new Date(data.created_at||Date.now());
+  const invoiceDate = createdAt.toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'});
+  const validDate   = new Date(createdAt.getTime()+30*24*60*60*1000).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'});
+  const quotationId = data.quotation_id || data.id || '';
+
+  // Resolve T&C — always use form data; fall back to defaults only if truly empty
+  let tcItems = data.tc_items;
+  if (typeof tcItems === 'string' && tcItems) {
+    try { tcItems = JSON.parse(tcItems); } catch { tcItems = null; }
+  }
+  if (!Array.isArray(tcItems) || !tcItems.length) {
+    tcItems = [
+      'Payment Terms: Invoice must be paid within 25 days from the issue date.',
+      'Delivery Estimate: Orders will be delivered within 45–60 business days after confirmation.',
+      'Quotation Validity: This quotation remains valid until ' + validDate + '.',
+      'Warranty: Hardware includes a standard one year warranty.',
+      'Cost is inclusive of all channels, Hinges and Handles.',
+      'Shipping Policy: Shipping fees may vary based on destination.',
+      'The payment received corresponds to the specific items or milestones listed in this quotation.',
+      'Any changes to the design or materials requested after payment will incur additional costs.',
+    ];
+  }
+
+  // Interior room sections
+  const roomHTML = Object.entries(rooms).map(([k,room],i) => {
+    if (!room||!room.items||!room.items.length) return '';
+    return tableSection(room.label||k, room.items, k==='accessories');
+  }).join('');
+
+  // Extra sections (ceiling/electrical/wooden/marble/general)
+  const sectionsHTML = isNewFmt
+    ? Object.entries(sections).map(([k,sec]) => {
+        if (!sec||!sec.items||!sec.items.length) return '';
+        const meta = SECTION_META[k]||{label:k,color:'#888',bg:'#F5F5F5'};
+        return tableSection(meta.label, sec.items, false, meta.color, meta.bg);
+      }).join('')
+    : `
+      <div class="section-label-bar" style="border-left:3px solid #E8471C;background:#FFF0EC">
+        <span style="font-weight:700;font-size:9pt;color:#1A1A1A">CEILING WORK ESTIMATION</span>
+        <span style="font-weight:700;font-size:9pt;color:#E8471C">${fmtINR(totalCeiling)}</span>
+      </div>
+      <table class="data-table">
+        <thead><tr>
+          <th style="text-align:left">PARTICULARS</th>
+          <th style="width:14%;text-align:center">QTY/AREA</th>
+          <th style="width:12%;text-align:center">RATE</th>
+          <th style="width:16%;text-align:right">AMOUNT (Rs.)</th>
+          <th style="width:20%;text-align:left">REMARKS</th>
+        </tr></thead>
+        <tbody>
+          <tr><td>Plain Area</td><td style="text-align:center">${cd.plainArea||0} sft</td><td style="text-align:center">${cd.plainRate||0}</td><td style="text-align:right;color:#E8471C;font-weight:700">${((cd.plainArea||0)*(cd.plainRate||0)).toLocaleString('en-IN')}</td><td>Incl. 2 cot Putti &amp; Painting</td></tr>
+          <tr style="background:#FAFAFA"><td>Strip Light Cutting</td><td style="text-align:center">${cd.stripLength||0} ft</td><td style="text-align:center">${cd.stripRate||0}</td><td style="text-align:right;color:#E8471C;font-weight:700">${((cd.stripLength||0)*(cd.stripRate||0)).toLocaleString('en-IN')}</td><td></td></tr>
+          <tr><td>Electrical Labour Charges</td><td style="text-align:center">—</td><td style="text-align:center">—</td><td style="text-align:right;color:#E8471C;font-weight:700">${(cd.electricalLabour||0).toLocaleString('en-IN')}</td><td></td></tr>
+        </tbody>
+      </table>`;
+
+  // Watermark SVG (diagonal "DEERAJ INTERIORS" repeated)
+  const watermark = `
+    <div class="watermark" aria-hidden="true">
+      <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="wm" x="0" y="0" width="320" height="220" patternUnits="userSpaceOnUse" patternTransform="rotate(-40)">
+            <image href="${LOGO_URL}" x="20" y="30" width="200" height="70" opacity="0.07"/>
+          </pattern>
+        </defs>
+        <rect width="100%" height="100%" fill="url(#wm)"/>
+      </svg>
+    </div>`;
+
+  const commonPageStyles = `
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 10pt; color: #1A1A1A; background: #fff; }
+    .page { position: relative; width: 210mm; min-height: 297mm; margin: 0 auto; padding: 0; background: #fff; page-break-after: always; overflow: hidden; }
+    .page:last-child { page-break-after: auto; }
+    .watermark { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
+    .page-content { position: relative; z-index: 1; }
+    .page-header-bar { display: flex; justify-content: space-between; align-items: center; padding: 12px 28px; background: #fff; border-bottom: 1px solid #E0E0E0; }
+    .logo-img { height: 48px; width: auto; object-fit: contain; }
+    .brand-line { height: 3px; background: #E8471C; }
+    .quotation-label { font-size: 13pt; color: #E8471C; font-weight: 700; letter-spacing: 2px; }
+    .header-meta { font-size: 7.5pt; color: #AAAAAA; margin-top: 2px; }
+    .info-section { display: flex; background: #F5F5F5; border-bottom: 1px solid #E0E0E0; padding: 10px 28px; gap: 0; }
+    .info-col { flex: 1; }
+    .info-col-title { font-size: 7pt; font-weight: 700; color: #AAA; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; border-bottom: 1px solid #E0E0E0; padding-bottom: 3px; }
+    .info-row { display: flex; gap: 6px; margin-bottom: 3px; }
+    .info-label { font-size: 7.5pt; color: #555; min-width: 60px; }
+    .info-value { font-size: 10pt; font-weight: 700; }
+    .info-divider { width: 1px; background: #E0E0E0; margin: 0 16px; }
+    .body-pad { padding: 4px 24px 24px; }
+    .section-label-bar { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; margin-top: 10px; }
+    .data-table { width: 100%; border-collapse: collapse; font-size: 8.5pt; table-layout: fixed; margin-top: 0; }
+    .data-table thead tr { background: #1A1A1A; }
+    .data-table th { padding: 5px 7px; color: #fff; font-size: 8pt; font-weight: 700; border: 1px solid #111; white-space: nowrap; }
+    .data-table td { padding: 5px 7px; border: 1px solid #E0E0E0; vertical-align: top; word-break: break-word; }
+    .interior-total { display: flex; justify-content: space-between; align-items: center; background: rgba(232,71,28,0.10); border-radius: 3px; padding: 7px 12px; margin-top: 10px; }
+    .interior-total-label { font-weight: 700; font-size: 10pt; }
+    .interior-total-value { font-weight: 700; font-size: 11pt; color: #E8471C; }
+    .totals-block { margin: 10px 0; border: 1px solid #E0E0E0; border-radius: 3px; overflow: hidden; }
+    .totals-row { display: flex; justify-content: space-between; padding: 6px 14px; font-size: 9.5pt; }
+    .subtotal-row { background: #F5F5F5; border-bottom: 1px solid #E0E0E0; }
+    .gst-row { background: #FFF0EC; border-bottom: 1px solid #E0E0E0; color: #92400E; font-weight: 600; }
+    .grand-row { background: #1A1A1A; color: #E8471C; font-weight: 700; font-size: 11pt; }
+    .notes-box { background: #F5F5F5; border: 0.5px solid #E0E0E0; border-radius: 3px; padding: 8px 12px; margin-top: 8px; }
+    .notes-title { font-size: 8pt; font-weight: 700; margin-bottom: 4px; }
+    .note-item { font-size: 7.5pt; color: #555; line-height: 1.4; margin-bottom: 1.5px; }
+    .sign-row { display: flex; justify-content: space-between; margin-top: 20px; padding-top: 8px; border-top: 0.5px solid #E0E0E0; }
+    .sign-block { text-align: center; min-width: 110px; }
+    .sign-space { height: 30px; }
+    .sign-line { height: 1px; background: #1A1A1A; margin-bottom: 3px; }
+    .sign-label { font-size: 7pt; color: #888; }
+    .sign-name { font-size: 8.5pt; font-weight: 700; }
+    .tc-box { background: #FFF0EC; border: 1px solid #FDE8E2; border-radius: 4px; padding: 12px 16px; margin-bottom: 8px; }
+    .tc-list { margin: 0; padding-left: 16px; list-style: disc; }
+    .tc-list li { font-size: 9.5pt; color: #333; line-height: 1.65; margin-bottom: 3px; }
+    .pay-table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+    .pay-table th { background: #1A1A1A; color: #fff; padding: 5px 6px; font-size: 7.5pt; font-weight: 700; border: 1px solid #111; }
+    .pay-table td { padding: 8px 6px; border: 1px solid #E0E0E0; height: 26px; font-size: 8.5pt; }
+    .section-title-big { font-size: 12pt; font-weight: 800; color: #1A1A1A; margin-bottom: 10px; letter-spacing: 0.5px; }
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .page { margin: 0; box-shadow: none; }
+    }`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Quotation — ${data.customer_name}</title>
+  <style>${commonPageStyles}</style>
+</head>
+<body>
+
+<!-- ══════════════ PAGE 1 — QUOTATION ══════════════ -->
+<div class="page">
+  ${watermark}
+  <div class="page-content">
+    ${pageHeader(invoiceDate, smPhone, true, quotationId)}
+
+    <!-- Client LEFT | Site Manager RIGHT -->
+    <div class="info-section">
+      <div class="info-col">
+        <div class="info-col-title">Client Information</div>
+        <div class="info-row"><span class="info-label">Name</span><span class="info-value">${dash(data.customer_name)}</span></div>
+        <div class="info-row"><span class="info-label">Phone</span><span class="info-value">${dash(data.customer_phone||data.mobile)}</span></div>
+        <div class="info-row"><span class="info-label">Alt Phone</span><span class="info-value">${clientAltPhone}</span></div>
+        <div class="info-row"><span class="info-label">Address</span><span class="info-value">${clientAddress}</span></div>
+        <div class="info-row"><span class="info-label">Pincode</span><span class="info-value">${clientPincode}</span></div>
+        <div class="info-row"><span class="info-label">Villa / Flat</span><span class="info-value">${clientVilla}</span></div>
+        <div class="info-row"><span class="info-label">Site Name</span><span class="info-value">${clientSiteName}</span></div>
+        <div class="info-row"><span class="info-label">Location</span><span class="info-value">${clientLocation}</span></div>
+        <div class="info-row"><span class="info-label">Project Type</span><span class="info-value">${projectType}</span></div>
+      </div>
+      <div class="info-divider"></div>
+      <div class="info-col">
+        <div class="info-col-title">Site Manager Information</div>
+        <div class="info-row"><span class="info-label">Name</span><span class="info-value">${dash(smName)}</span></div>
+        <div class="info-row"><span class="info-label">Designation</span><span class="info-value">${dash(smDesig)}</span></div>
+        <div class="info-row"><span class="info-label">Phone</span><span class="info-value">${dash(smPhone)}</span></div>
+        <div class="info-row"><span class="info-label">Branch</span><span class="info-value">${dash(smBranch)}</span></div>
+      </div>
+    </div>
+
+    <div class="body-pad">
+      ${roomHTML}
+
+      <!-- Interior Total -->
+      <div class="interior-total">
+        <span class="interior-total-label">Total 1 — Interior Work</span>
+        <span class="interior-total-value">${fmtINR(totalInterior)}</span>
+      </div>
+
+      ${sectionsHTML}
+
+      <!-- Totals -->
+      <div class="totals-block">
+        <div class="totals-row subtotal-row"><span>Subtotal</span><span>${fmtINR(subtotal)}</span></div>
+        ${gstPercent>0?`<div class="totals-row gst-row"><span>GST (${gstPercent}%)</span><span>+ ${fmtINR(gstAmount)}</span></div>`:''}
+        <div class="totals-row grand-row">
+          <span>GRAND TOTAL${gstPercent>0?' (incl. '+gstPercent+'% GST)':''}</span>
+          <span>${fmtINR(grandTotal)}</span>
+        </div>
+      </div>
+
+      <!-- Notes -->
+      <div class="notes-box">
+        <div class="notes-title">NOTE:</div>
+        ${NOTES.map((n,i)=>`<div class="note-item">${i+1}. ${n}</div>`).join('')}
+      </div>
+
+      <!-- Signatures -->
+      <div class="sign-row">
+        <div class="sign-block"><div class="sign-space"></div><div class="sign-line"></div><div class="sign-label">CUSTOMER SIGN</div><div class="sign-name">${data.customer_name}</div></div>
+        <div class="sign-block"><div class="sign-space"></div><div class="sign-line"></div><div class="sign-label">SITE MANAGER SIGN</div><div class="sign-name">${smName}</div><div class="sign-label">${smDesig}</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ PAGE 2 — TERMS & CONDITIONS ══════════════ -->
+<div class="page">
+  ${watermark}
+  <div class="page-content">
+    ${pageHeader(invoiceDate, smPhone, false)}
+    <div class="body-pad" style="padding-top:20px">
+      <div class="section-title-big">TERMS AND CONDITIONS</div>
+      <div class="tc-box">
+        <ul class="tc-list">
+          ${tcItems.map(t => `<li>${t}</li>`).join('')}
+        </ul>
+      </div>
+      <div class="sign-row" style="margin-top:60px">
+        <div class="sign-block"><div class="sign-space"></div><div style="font-size:8pt;color:#888;margin-bottom:30px">Prepared By</div><div class="sign-line"></div><div class="sign-name">${smName}</div><div class="sign-label">${smDesig}</div></div>
+        <div class="sign-block"><div class="sign-space"></div><div style="font-size:8pt;color:#888;margin-bottom:30px">Customer Sign</div><div class="sign-line"></div><div class="sign-name">${data.customer_name}</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ PAGE 3 — PAYMENT SCHEDULE ══════════════ -->
+<div class="page">
+  ${watermark}
+  <div class="page-content">
+    ${pageHeader(invoiceDate, smPhone, false)}
+    <div class="body-pad" style="padding-top:20px">
+      <div class="section-title-big" style="text-align:center;letter-spacing:1px">STAGE WISE PAYMENT SCHEDULE</div>
+      <table class="pay-table">
+        <thead><tr>${['Payment Stages','Payment Amt','Payment Date','Paid Amt','Paid Date','Payment Type','Payment Details','Received By'].map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${(()=>{ let ps=data.pay_stages; if(typeof ps==='string'&&ps){try{ps=JSON.parse(ps);}catch{ps=null;}} if(!Array.isArray(ps)||!ps.length)ps=PAY_STAGES; return ps.map((r,i)=>{ const row=typeof r==='string'?{stage:r,amount:'',notes:''}:{stage:r.stage||'',amount:r.amount||'',notes:r.notes||''}; const amtCell=row.amount?`<td style="color:#E8471C;font-weight:700">Rs. ${Number(row.amount).toLocaleString('en-IN')}</td>`:'<td></td>'; return `<tr style="background:${i%2===1?'#FAFAFA':'#fff'}"><td style="font-weight:${row.stage?'600':'normal'}">${row.stage||''}</td>${amtCell}<td></td><td></td><td></td><td></td><td style="color:#555">${row.notes||''}</td><td></td></tr>`; }).join(''); })()}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════ PAGE 4 — PAYMENT T&C ══════════════ -->
+<div class="page">
+  ${watermark}
+  <div class="page-content">
+    ${pageHeader(invoiceDate, smPhone, false)}
+    <div class="body-pad" style="padding-top:20px">
+      <div class="section-title-big">STAGE WISE PAYMENT — TERMS &amp; CONDITIONS</div>
+      <ul class="tc-list" style="margin-top:8px">
+        ${PAY_TC.map(([b,r])=>`<li><strong>${b}</strong> ${r}</li>`).join('')}
+      </ul>
+      <div class="sign-row" style="margin-top:60px">
+        <div class="sign-block"><div style="font-size:8pt;color:#888;margin-bottom:30px">Prepared By</div><div class="sign-line"></div><div class="sign-name">${smName}</div><div class="sign-label">${smDesig}</div></div>
+        <div class="sign-block"><div style="font-size:8pt;color:#888;margin-bottom:30px">Customer Sign</div><div class="sign-line"></div><div class="sign-name">${data.customer_name}</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Wait for logo image to load before printing
+  window.onload = function() {
+    var imgs = document.querySelectorAll('img');
+    var loaded = 0;
+    if (imgs.length === 0) { window.print(); window.close(); return; }
+    imgs.forEach(function(img) {
+      if (img.complete) { loaded++; if (loaded===imgs.length) { window.print(); window.close(); } }
+      else {
+        img.onload = img.onerror = function() { loaded++; if (loaded===imgs.length) { window.print(); window.close(); } };
+      }
+    });
+  };
+</script>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=900,height=700');
+  if (!win) { alert('Please allow popups for this site to print.'); return; }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+}

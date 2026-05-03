@@ -1,0 +1,21 @@
+# --- Dependencies ---
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+
+# --- Environment & Security ---
+.env
+backend/.env
+frontend/.env
+*.log
+
+# --- Build Folders ---
+frontend/build/
+frontend/dist/
+
+# --- System & Backups ---
+.DS_Store
+Thumbs.db
+*.zip
+for zip/
+total zip file.zip

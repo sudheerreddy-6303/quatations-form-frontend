@@ -1,0 +1,115 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700;800&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 40px;
+  height: 68px;
+  background: #FFFFFF;
+  border-bottom: 3px solid #E8471C;
+  box-shadow: 0 2px 16px rgba(232,71,28,0.12);
+  gap: 16px;
+}
+
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.brand-icon img {
+  height: 44px;
+  width: auto;
+  object-fit: contain;
+}
+
+.nav-links {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 8px;
+  text-decoration: none;
+  color: #555555;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: all 0.2s;
+  letter-spacing: 0.2px;
+  border: 1.5px solid transparent;
+}
+
+.nav-link:hover {
+  color: #E8471C;
+  background: #FFF0EC;
+  border-color: rgba(232,71,28,0.2);
+}
+
+.nav-link.active {
+  color: #E8471C;
+  background: #FFF0EC;
+  border-color: rgba(232,71,28,0.3);
+  font-weight: 700;
+}
+
+/* User row */
+.nav-user-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.nav-username {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: #555;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.btn-nav-logout {
+  padding: 7px 16px;
+  background: transparent;
+  border: 1.5px solid #E5E5E5;
+  border-radius: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.btn-nav-logout:hover {
+  background: #FFF0EC;
+  border-color: #E8471C;
+  color: #E8471C;
+}
+
+.main-content {
+  min-height: calc(100vh - 68px);
+  padding: 40px;
+  max-width: 1400px;
+  margin: 0 auto;
+  background: #FFFFFF;
+}
+
+@media (max-width: 768px) {
+  .navbar { padding: 0 16px; height: 60px; }
+  .main-content { padding: 20px 16px; }
+  .nav-username { display: none; }
+  .brand-icon img { height: 36px; }
+}
