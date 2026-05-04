@@ -7,7 +7,6 @@
   --gold-light: #FFF0EC;
   --gold-pale: #FFF0EC;
   --dark: #1C1C1E;
-  --dark1:#E8471C;
   --mid: #3A3A3C;
   --gray: #6B6B6B;
   --border: #E5E5E5;
@@ -58,7 +57,7 @@
 }
 
 .grand-total-badge {
-  background: var(--dark1);
+  background: var(--dark);
   border-radius: 16px;
   padding: 18px 28px;
   text-align: right;
@@ -70,16 +69,16 @@
   font-size: 10px;
   letter-spacing: 2.5px;
   text-transform: uppercase;
-  color: #ffffff;
+  color: #999;
   margin-bottom: 6px;
   font-weight: 600;
 }
 
 .gt-amount {
-  font-family: '', serif;
+  font-family: 'Playfair Display', serif;
   font-size: 32px;
   font-weight: 700;
-  color: #ffffff;
+  color: #E8471C;
 }
 
 /* ─── SECTIONS ───────────────────────────────────────────── */
@@ -748,10 +747,10 @@
 }
 
 .grand-total-row {
-  background: orangered;
+  background: #1A1A1A;
   padding: 18px 20px;
   font-size: 16px;
-  color: #ffffff;
+  color: #DDD;
   font-weight: 600;
 }
 
@@ -763,10 +762,10 @@
 }
 
 .gt-number {
-  font-family: '', serif;
+  font-family: 'Playfair Display', serif;
   font-size: 26px;
   font-weight: 700;
-  color: #ffffff;
+  color: #E8471C;
 }
 
 /* ─── FORM ACTIONS ───────────────────────────────────────── */

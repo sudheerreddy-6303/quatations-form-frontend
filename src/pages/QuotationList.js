@@ -2093,10 +2093,11 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
 ══════════════════════════════════════════════════════════════ */
 // Format large amounts compactly
 const fmtAmt = (n) => {
-  if (n >= 10000000) return '₹' + (n/10000000).toFixed(2).replace(/\.?0+$/,'') + ' Cr';
-  if (n >= 100000)   return '₹' + (n/100000).toFixed(2).replace(/\.?0+$/,'')  + ' L';
-  if (n >= 1000)     return '₹' + (n/1000).toFixed(1).replace(/\.?0+$/,'')    + 'K';
-  return '₹' + n.toLocaleString('en-IN');
+  const v = parseFloat(n) || 0;
+  if (v >= 10000000) return '₹' + (v/10000000).toFixed(2).replace(/\.?0+$/,'') + ' Cr';
+  if (v >= 100000)   return '₹' + (v/100000).toFixed(2).replace(/\.?0+$/,'')  + ' L';
+  if (v >= 1000)     return '₹' + (v/1000).toFixed(1).replace(/\.?0+$/,'')    + 'K';
+  return '₹' + v.toLocaleString('en-IN');
 };
 
 export default function QuotationList({ user = { role: 'admin' } }) {
@@ -2197,23 +2198,21 @@ export default function QuotationList({ user = { role: 'admin' } }) {
     return matchSearch && matchStatus && matchBranch && matchManager && matchFrom && matchTo && matchBudgMin && matchBudgMax;
   });
 
-  // Cards always computed from filtered (so filters affect cards too)
-  const cardBase = isManager
-    ? filtered.filter(q => (q.site_manager_name||'').toLowerCase().trim() === (user.display||'').toLowerCase().trim())
-    : filtered;
+  // Cards computed from filtered — all roles see all quotations
+  const cardBase = filtered;
 
   const bookedQ      = cardBase.filter(q=>(q.project_status||'Unbooked')==='Booked');
   const unbookedQ    = cardBase.filter(q=>(q.project_status||'Unbooked')==='Unbooked');
   const bookedCount  = bookedQ.length;
   const unbookedCount= unbookedQ.length;
 
-  const totalGrand         = cardBase.reduce((s,q)=>s+Number(q.grand_total||0),0);
-  const totalPaid          = cardBase.reduce((s,q)=>s+Number(q.paid_total||0),0);
+  const totalGrand         = cardBase.reduce((s,q)=>s+(parseFloat(q.grand_total)||0),0);
+  const totalPaid          = cardBase.reduce((s,q)=>s+(parseFloat(q.paid_total)||0),0);
   const totalBalance       = totalGrand - totalPaid;
 
-  const totalBookedAmt     = bookedQ.reduce((s,q)=>s+Number(q.grand_total||0),0);
-  const totalUnbookedAmt   = unbookedQ.reduce((s,q)=>s+Number(q.grand_total||0),0);
-  const totalBookedPaid    = bookedQ.reduce((s,q)=>s+Number(q.paid_total||0),0);
+  const totalBookedAmt     = bookedQ.reduce((s,q)=>s+(parseFloat(q.grand_total)||0),0);
+  const totalUnbookedAmt   = unbookedQ.reduce((s,q)=>s+(parseFloat(q.grand_total)||0),0);
+  const totalBookedPaid    = bookedQ.reduce((s,q)=>s+(parseFloat(q.paid_total)||0),0);
   const totalBookedBalance = totalBookedAmt - totalBookedPaid;
 
   const hasFilters = filterBranch!=='All'||filterManager!=='All'||filterFrom||filterTo||filterBudgetMin||filterBudgetMax;
@@ -2257,7 +2256,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
 
         {/* ── Row 1: Counts ── */}
         {[
-          { icon:'📋', bg:'#FFF0EC', label: isManager?'My Quotations':'Total Quotations', value: cardBase.length,  color:'#E8471C', sub: hasFilters?`of ${quotations.length} total`:null },
+          { icon:'📋', bg:'#FFF0EC', label:'Total Quotations', value: cardBase.length,  color:'#E8471C', sub: hasFilters?`of ${quotations.length} total`:null },
           { icon:'✅', bg:'#EFF6FF', label:'Booked Projects',   value: bookedCount,    color:'#1D4ED8' },
           { icon:'🔘', bg:'#FFF5F5', label:'Unbooked Projects', value: unbookedCount,  color:'#EF4444' },
           { icon:'💰', bg:'#F0FDF4', label:'Total Amount',      value: fmtAmt(totalGrand),   color:'#10B981', isMoney:true },
