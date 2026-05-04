@@ -10,6 +10,10 @@ const VALID_USERS = [
   { username: 'deeraj',  password: 'interiors123',  display: 'Deeraj',        role: 'admin'   },
   { username: 'manager', password: 'manager@123',   display: 'Site Manager',  role: 'manager' },
   { username: 'chandu',  password: 'chandu@123',    display: 'Chandu',        role: 'manager' },
+  { username: 'sony',    password: 'sony@123',      display: 'Sony',          role: 'manager' },
+  { username: 'veera',   password: 'veera@123',     display: 'Veera',         role: 'manager' },
+  { username: 'teja',    password: 'teja@123',      display: 'Teja',          role: 'manager' },
+  { username: 'sakshi',  password: 'sakshi@123',    display: 'Sakshi',        role: 'manager' },
 ];
 
 export default function Login({ onLogin }) {

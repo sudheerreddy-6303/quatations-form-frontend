@@ -56,6 +56,20 @@ const DEFAULT_PAY_STAGES = [
   {stage:'',                      amount:''},
 ];
 
+/* Convert any date string to YYYY-MM-DD for <input type="date"> */
+const toInputDate = (val) => {
+  if (!val) return '';
+  // Already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(val)) return val;
+  // DD/MM/YYYY or DD-MM-YYYY
+  const m = val.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  // Try native Date parse as fallback
+  const d = new Date(val);
+  if (!isNaN(d)) return d.toISOString().slice(0, 10);
+  return '';
+};
+
 /* Normalise pay_stages from DB — old data may be plain strings */
 const normalisePayStages = (raw) => {
   if (!raw) return DEFAULT_PAY_STAGES.map(r=>({...r}));
@@ -64,12 +78,17 @@ const normalisePayStages = (raw) => {
   if (!Array.isArray(arr) || !arr.length) return DEFAULT_PAY_STAGES.map(r=>({...r}));
   return arr.map(r => {
     if (typeof r === 'string') return { stage:r, paymentAmount:'', paymentDate:'', paidAmount:'', paidDate:'', paymentType:'', paymentDetails:'', receivedBy:'' };
+    const payAmt = (r.paymentAmount !== undefined && r.paymentAmount !== null && r.paymentAmount !== '')
+      ? String(r.paymentAmount)
+      : (r.amount !== undefined && r.amount !== null && r.amount !== '') ? String(r.amount) : '';
+    const paidAmt = (r.paidAmount !== undefined && r.paidAmount !== null && r.paidAmount !== '')
+      ? String(r.paidAmount) : '';
     return {
       stage:          r.stage          || '',
-      paymentAmount:  r.paymentAmount  || r.amount || '',
-      paymentDate:    r.paymentDate    || '',
-      paidAmount:     r.paidAmount     || '',
-      paidDate:       r.paidDate       || '',
+      paymentAmount:  payAmt,
+      paymentDate:    toInputDate(r.paymentDate),
+      paidAmount:     paidAmt,
+      paidDate:       toInputDate(r.paidDate),
       paymentType:    r.paymentType    || '',
       paymentDetails: r.paymentDetails || r.notes || '',
       receivedBy:     r.receivedBy     || '',
@@ -155,16 +174,69 @@ const TOTAL_W    = STAGE_W + Object.values(COL_WIDTHS).reduce((a,b)=>a+b,0) + 28
 const C_PDF = { brand:'#E8471C', dark:'#1A1A1A', gray:'#666', border:'#DDDDDD', white:'#fff', rowAlt:'#FAFAFA', lightBg:'#F5F5F5' };
 const cellBase = { border:'none', background:'transparent', fontFamily:'Arial,sans-serif', fontSize:11, color:'#1A1A1A', outline:'none', padding:'6px 6px', width:'100%', boxSizing:'border-box' };
 
-function PaymentModal({ payStages, setPayStages, onClose, clientName, smName }) {
+function PaymentModal({ payStages, setPayStages, onClose, clientName, smName, quotationId }) {
   const overlayRef = useRef();
+  const fileRefs   = useRef({});
+
+  // live transactions fetched from DB
+  const [transactions, setTransactions] = React.useState([]);
+  const [txnLoading,   setTxnLoading]   = React.useState(true);
+
+  React.useEffect(() => {
+    if (!quotationId) { setTxnLoading(false); return; }
+    api.get(`/quotations/${quotationId}/transactions`)
+      .then(r => setTransactions(r.data.data || []))
+      .catch(() => {})
+      .finally(() => setTxnLoading(false));
+  }, [quotationId]);
+
+  // compute totals per stage from real transactions
+  const txnByStage = React.useMemo(() => {
+    const map = {};
+    transactions.forEach(t => {
+      const key = (t.stage_name || '').trim().toLowerCase();
+      if (!map[key]) map[key] = { paid: 0, txns: [] };
+      map[key].paid += Number(t.paid_amount || 0);
+      map[key].txns.push(t);
+    });
+    return map;
+  }, [transactions]);
+
+  const getStageTxns = (stageName) => {
+    const key = (stageName || '').trim().toLowerCase();
+    return txnByStage[key] || { paid: 0, txns: [] };
+  };
+
   const update = (idx, key, val) => setPayStages(prev => prev.map((r, i) => i === idx ? { ...r, [key]: val } : r));
   const addRow  = () => setPayStages(prev => [...prev, { stage:'', paymentAmount:'', paymentDate:'', paidAmount:'', paidDate:'', paymentType:'', paymentDetails:'', receivedBy:'' }]);
   const removeRow = (idx) => setPayStages(prev => prev.filter((_, i) => i !== idx));
+
+  const handleFileChange = (idx, e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error('File too large. Max 5MB.'); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => update(idx, 'attachmentData', ev.target.result) || update(idx, 'attachmentName', file.name);
+    reader.readAsDataURL(file);
+    // do both updates
+    const reader2 = new FileReader();
+    reader2.onload = (ev) => {
+      setPayStages(prev => prev.map((r, i) => i === idx ? { ...r, attachmentData: ev.target.result, attachmentName: file.name } : r));
+    };
+    reader2.readAsDataURL(file);
+  };
+
   const today = new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'long', year:'numeric' });
+
+  const totalScheduled = payStages.reduce((s, r) => s + (parseFloat(r.paymentAmount) || 0), 0);
+  const totalActualPaid = transactions.reduce((s, t) => s + Number(t.paid_amount || 0), 0);
+
   return (
     <div ref={overlayRef} onClick={e=>e.target===overlayRef.current&&onClose()}
       style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.65)', zIndex:9999, display:'flex', alignItems:'flex-start', justifyContent:'center', overflowY:'auto', padding:'24px 12px' }}>
-      <div style={{ background:C_PDF.white, borderRadius:4, width:'100%', maxWidth:TOTAL_W+80, boxShadow:'0 20px 60px rgba(0,0,0,0.4)', fontFamily:'Arial,sans-serif', overflow:'hidden' }}>
+      <div style={{ background:C_PDF.white, borderRadius:4, width:'100%', maxWidth:TOTAL_W+180, boxShadow:'0 20px 60px rgba(0,0,0,0.4)', fontFamily:'Arial,sans-serif', overflow:'hidden' }}>
+
+        {/* Header */}
         <div style={{ padding:'14px 30px 10px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:`1px solid ${C_PDF.border}`, background:C_PDF.white }}>
           <div>
             <div style={{ fontSize:20, fontWeight:700, color:C_PDF.brand, letterSpacing:2 }}>QUOTATION</div>
@@ -176,52 +248,170 @@ function PaymentModal({ payStages, setPayStages, onClose, clientName, smName }) 
           </div>
         </div>
         <div style={{ height:3, background:C_PDF.brand }} />
+
         <div style={{ padding:'20px 30px 0' }}>
-          <div style={{ textAlign:'center', fontWeight:700, fontSize:13, letterSpacing:1, marginBottom:14, color:C_PDF.dark }}>STAGE WISE PAYMENT SCHEDULE</div>
+          <div style={{ textAlign:'center', fontWeight:700, fontSize:13, letterSpacing:1, marginBottom:6, color:C_PDF.dark }}>STAGE WISE PAYMENT SCHEDULE</div>
+
+          {/* Summary bar */}
+          <div style={{ display:'flex', gap:16, justifyContent:'center', marginBottom:16 }}>
+            <div style={{ background:'#EFF6FF', border:'1.5px solid #BFDBFE', borderRadius:8, padding:'8px 20px', textAlign:'center' }}>
+              <div style={{ fontSize:10, color:'#1D4ED8', fontWeight:700, letterSpacing:0.5 }}>TOTAL SCHEDULED</div>
+              <div style={{ fontSize:16, fontWeight:700, color:'#1D4ED8' }}>₹{totalScheduled.toLocaleString('en-IN')}</div>
+            </div>
+            <div style={{ background:'#F0FDF4', border:'1.5px solid #BBF7D0', borderRadius:8, padding:'8px 20px', textAlign:'center' }}>
+              <div style={{ fontSize:10, color:'#15803D', fontWeight:700, letterSpacing:0.5 }}>TOTAL RECEIVED</div>
+              <div style={{ fontSize:16, fontWeight:700, color:'#15803D' }}>₹{totalActualPaid.toLocaleString('en-IN')}</div>
+            </div>
+            <div style={{ background: totalScheduled - totalActualPaid > 0 ? '#FFF5F5' : '#F0FDF4', border:`1.5px solid ${totalScheduled - totalActualPaid > 0 ? '#FECACA' : '#BBF7D0'}`, borderRadius:8, padding:'8px 20px', textAlign:'center' }}>
+              <div style={{ fontSize:10, fontWeight:700, letterSpacing:0.5, color: totalScheduled - totalActualPaid > 0 ? '#DC2626' : '#15803D' }}>BALANCE</div>
+              <div style={{ fontSize:16, fontWeight:700, color: totalScheduled - totalActualPaid > 0 ? '#DC2626' : '#15803D' }}>₹{(totalScheduled - totalActualPaid).toLocaleString('en-IN')}</div>
+            </div>
+          </div>
+
           <div style={{ overflowX:'auto', marginBottom:20 }}>
-            <table style={{ borderCollapse:'collapse', width:'100%', minWidth:TOTAL_W, fontSize:11 }}>
-              <colgroup>
-                <col style={{ width:STAGE_W }} />
-                {PAY_COLS.map(c=><col key={c.key} style={{ width:COL_WIDTHS[c.key] }} />)}
-                <col style={{ width:28 }} />
-              </colgroup>
+            <table style={{ borderCollapse:'collapse', width:'100%', fontSize:11 }}>
               <thead>
                 <tr style={{ background:C_PDF.dark }}>
-                  <th style={{ padding:'6px 8px', textAlign:'left', color:C_PDF.white, fontWeight:700, fontSize:10, letterSpacing:0.3, borderRight:'1px solid #333' }}>Payment Stages</th>
-                  {PAY_COLS.map(c=>(
-                    <th key={c.key} style={{ padding:'6px 6px', textAlign:'center', color:C_PDF.white, fontWeight:700, fontSize:10, letterSpacing:0.3, borderRight:'1px solid #333', whiteSpace:'pre-line' }}>{c.label}</th>
-                  ))}
-                  <th style={{ background:C_PDF.dark }} />
+                  <th style={{ padding:'8px 10px', textAlign:'left', color:C_PDF.white, fontWeight:700, fontSize:10, borderRight:'1px solid #333', minWidth:150 }}>Payment Stage</th>
+                  <th style={{ padding:'8px 8px', textAlign:'right', color:C_PDF.white, fontWeight:700, fontSize:10, borderRight:'1px solid #333', minWidth:100 }}>Scheduled (₹)</th>
+                  <th style={{ padding:'8px 8px', textAlign:'left', color:C_PDF.white, fontWeight:700, fontSize:10, borderRight:'1px solid #333', minWidth:90 }}>Due Date</th>
+                  <th style={{ padding:'8px 8px', textAlign:'right', color:'#86EFAC', fontWeight:700, fontSize:10, borderRight:'1px solid #333', minWidth:110 }}>✓ Actual Paid (₹)</th>
+                  <th style={{ padding:'8px 8px', textAlign:'left', color:'#86EFAC', fontWeight:700, fontSize:10, borderRight:'1px solid #333', minWidth:90 }}>Paid Date</th>
+                  <th style={{ padding:'8px 8px', textAlign:'left', color:'#86EFAC', fontWeight:700, fontSize:10, borderRight:'1px solid #333', minWidth:80 }}>Mode</th>
+                  <th style={{ padding:'8px 8px', textAlign:'left', color:'#86EFAC', fontWeight:700, fontSize:10, borderRight:'1px solid #333', minWidth:100 }}>Ref / Details</th>
+                  <th style={{ padding:'8px 8px', textAlign:'left', color:'#86EFAC', fontWeight:700, fontSize:10, borderRight:'1px solid #333', minWidth:80 }}>Received By</th>
+                  <th style={{ padding:'8px 8px', textAlign:'center', color:C_PDF.white, fontWeight:700, fontSize:10, borderRight:'1px solid #333', minWidth:70 }}>📎 File</th>
+                  <th style={{ padding:'8px 4px', background:C_PDF.dark, width:28 }} />
                 </tr>
               </thead>
               <tbody>
-                {payStages.map((row,idx)=>(
-                  <tr key={idx} style={{ background:idx%2===1?C_PDF.rowAlt:C_PDF.white }}>
-                    <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'2px 2px' }}>
-                      <input value={row.stage} onChange={e=>update(idx,'stage',e.target.value)} style={{ ...cellBase, fontWeight:700 }} placeholder="Stage name" />
-                    </td>
-                    {PAY_COLS.map(c=>(
-                      <td key={c.key} style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'2px 2px' }}>
-                        <input type={c.type==='number'?'text':c.type} inputMode={c.type==='number'?'numeric':undefined}
-                          value={row[c.key]} onChange={e=>update(idx,c.key,e.target.value)}
-                          style={{ ...cellBase, color:c.type==='number'&&row[c.key]?C_PDF.brand:C_PDF.dark, fontWeight:c.type==='number'&&row[c.key]?700:400, textAlign:c.type==='number'?'right':'left' }}
-                          placeholder={c.type==='date'?'dd/mm/yyyy':''} />
+                {payStages.map((row, idx) => {
+                  const stageTxn  = getStageTxns(row.stage);
+                  const totalPaid = stageTxn.paid;
+                  const scheduled = parseFloat(row.paymentAmount) || 0;
+                  const isPaid    = totalPaid >= scheduled && scheduled > 0;
+                  const isPartial = totalPaid > 0 && totalPaid < scheduled;
+                  const latestTxn = stageTxn.txns[stageTxn.txns.length - 1] || null;
+                  const rowBg     = isPaid ? '#F0FDF4' : isPartial ? '#FFFBEB' : idx%2===1 ? C_PDF.rowAlt : C_PDF.white;
+
+                  return (
+                    <tr key={idx} style={{ background: rowBg }}>
+                      {/* Stage name (editable) */}
+                      <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'2px 4px', position:'relative' }}>
+                        <input value={row.stage} onChange={e=>update(idx,'stage',e.target.value)}
+                          style={{ ...cellBase, fontWeight:700 }} placeholder="Stage name" />
+                        {isPaid && <span style={{ position:'absolute', right:4, top:'50%', transform:'translateY(-50%)', fontSize:10, color:'#15803D', fontWeight:700 }}>✓</span>}
                       </td>
-                    ))}
-                    <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, textAlign:'center', padding:'2px' }}>
-                      <button type="button" onClick={()=>removeRow(idx)} style={{ background:'none', border:'none', color:'#CCC', cursor:'pointer', fontSize:13, padding:'4px', lineHeight:1 }}
-                        onMouseEnter={e=>e.currentTarget.style.color='#E05A5A'} onMouseLeave={e=>e.currentTarget.style.color='#CCC'}>✕</button>
-                    </td>
-                  </tr>
-                ))}
+
+                      {/* Scheduled amount (editable) */}
+                      <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'2px 4px' }}>
+                        <input type="text" inputMode="numeric" value={row.paymentAmount}
+                          onChange={e=>{const v=e.target.value;if(/^[0-9]*\.?[0-9]*$/.test(v))update(idx,'paymentAmount',v);}}
+                          style={{ ...cellBase, textAlign:'right', color: scheduled>0?'#1D4ED8':C_PDF.dark, fontWeight: scheduled>0?700:400 }}
+                          placeholder="0" />
+                      </td>
+
+                      {/* Due date (editable) */}
+                      <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'2px 4px' }}>
+                        <input type="date" value={row.paymentDate} onChange={e=>update(idx,'paymentDate',e.target.value)}
+                          style={{ ...cellBase }} />
+                      </td>
+
+                      {/* Actual Paid — from real transactions (read-only, shows sum) */}
+                      <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', textAlign:'right' }}>
+                        {txnLoading ? (
+                          <span style={{ color:'#CCC', fontSize:10 }}>…</span>
+                        ) : totalPaid > 0 ? (
+                          <span style={{ fontWeight:700, color:'#15803D', fontSize:12 }}>₹{totalPaid.toLocaleString('en-IN')}</span>
+                        ) : (
+                          <span style={{ color:'#CCC', fontSize:10 }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Paid Date — from latest transaction */}
+                      <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px' }}>
+                        {latestTxn?.paid_date ? (
+                          <span style={{ fontSize:11, color:C_PDF.dark }}>
+                            {new Date(latestTxn.paid_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
+                          </span>
+                        ) : <span style={{ color:'#CCC', fontSize:10 }}>—</span>}
+                      </td>
+
+                      {/* Payment mode — from latest transaction */}
+                      <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px' }}>
+                        {latestTxn?.payment_type ? (
+                          <span style={{ background:'#EFF6FF', color:'#1D4ED8', borderRadius:20, padding:'2px 7px', fontSize:10, fontWeight:600 }}>
+                            {latestTxn.payment_type}
+                          </span>
+                        ) : <span style={{ color:'#CCC', fontSize:10 }}>—</span>}
+                      </td>
+
+                      {/* Ref/Details — from latest transaction */}
+                      <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', maxWidth:100, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}
+                        title={latestTxn?.payment_details}>
+                        {latestTxn?.payment_details || <span style={{ color:'#CCC', fontSize:10 }}>—</span>}
+                      </td>
+
+                      {/* Received by — from latest transaction */}
+                      <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px' }}>
+                        {latestTxn?.received_by || <span style={{ color:'#CCC', fontSize:10 }}>—</span>}
+                      </td>
+
+                      {/* File attachment (editable) */}
+                      <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'4px 6px', textAlign:'center' }}>
+                        {row.attachmentData ? (
+                          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2 }}>
+                            <a href={row.attachmentData} download={row.attachmentName||'attachment'}
+                              style={{ fontSize:10, color:'#15803D', fontWeight:600, textDecoration:'none' }}>
+                              📎 {(row.attachmentName||'file').substring(0,8)}…
+                            </a>
+                            <button type="button" onClick={()=>{ update(idx,'attachmentData',''); update(idx,'attachmentName',''); if(fileRefs.current[idx]) fileRefs.current[idx].value=''; }}
+                              style={{ background:'none', border:'none', color:'#EF4444', fontSize:10, cursor:'pointer', padding:0 }}>✕</button>
+                          </div>
+                        ) : (
+                          <div>
+                            <input type="file" accept="image/*,application/pdf"
+                              ref={el => fileRefs.current[idx] = el}
+                              onChange={e => handleFileChange(idx, e)}
+                              style={{ display:'none' }} id={`file-${idx}`} />
+                            <label htmlFor={`file-${idx}`}
+                              style={{ cursor:'pointer', fontSize:16, color:'#CCC', display:'block' }}
+                              title="Attach file">📎</label>
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Delete row */}
+                      <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, textAlign:'center', padding:'2px' }}>
+                        <button type="button" onClick={()=>removeRow(idx)}
+                          style={{ background:'none', border:'none', color:'#CCC', cursor:'pointer', fontSize:13, padding:'4px', lineHeight:1 }}
+                          onMouseEnter={e=>e.currentTarget.style.color='#E05A5A'}
+                          onMouseLeave={e=>e.currentTarget.style.color='#CCC'}>✕</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+                {/* Add row button */}
                 <tr>
-                  <td colSpan={PAY_COLS.length+2} style={{ borderTop:`0.5px solid ${C_PDF.border}`, padding:'8px 12px' }}>
-                    <button type="button" onClick={addRow} style={{ background:'none', border:`1.5px dashed ${C_PDF.border}`, borderRadius:4, padding:'4px 18px', fontSize:11, color:C_PDF.gray, cursor:'pointer', fontFamily:'Arial,sans-serif' }}>+ Add Row</button>
+                  <td colSpan={10} style={{ borderTop:`0.5px solid ${C_PDF.border}`, padding:'8px 12px' }}>
+                    <button type="button" onClick={addRow}
+                      style={{ background:'none', border:`1.5px dashed ${C_PDF.border}`, borderRadius:4, padding:'4px 18px', fontSize:11, color:C_PDF.gray, cursor:'pointer', fontFamily:'Arial,sans-serif' }}>
+                      + Add Row
+                    </button>
+                    {txnLoading && <span style={{ marginLeft:12, fontSize:11, color:'#AAA' }}>Loading payments…</span>}
+                    {!txnLoading && transactions.length > 0 && (
+                      <span style={{ marginLeft:16, fontSize:11, color:'#15803D', fontWeight:600 }}>
+                        ✓ {transactions.length} transaction(s) loaded from records
+                      </span>
+                    )}
                   </td>
                 </tr>
               </tbody>
             </table>
           </div>
+
+          {/* Terms and Conditions */}
           <div style={{ marginBottom:20 }}>
             <div style={{ fontWeight:700, fontSize:12, color:C_PDF.dark, marginBottom:10, letterSpacing:0.3 }}>TERMS AND CONDITIONS</div>
             <div style={{ border:`1px solid ${C_PDF.border}`, borderRadius:2, padding:'12px 14px' }}>
@@ -233,6 +423,8 @@ function PaymentModal({ payStages, setPayStages, onClose, clientName, smName }) 
               ))}
             </div>
           </div>
+
+          {/* Signatures */}
           <div style={{ display:'flex', justifyContent:'space-between', padding:'18px 0 24px', borderTop:`0.5px solid ${C_PDF.border}`, marginTop:8 }}>
             <div>
               <div style={{ fontSize:10, color:C_PDF.gray, marginBottom:28 }}>Prepared By</div>
@@ -248,14 +440,23 @@ function PaymentModal({ payStages, setPayStages, onClose, clientName, smName }) 
             </div>
           </div>
         </div>
+
+        {/* Footer */}
         <div style={{ borderTop:`1px solid ${C_PDF.border}`, padding:'14px 24px', display:'flex', justifyContent:'flex-end', gap:10, background:C_PDF.lightBg }}>
-          <button type="button" onClick={onClose} style={{ padding:'9px 22px', border:`1.5px solid ${C_PDF.border}`, borderRadius:8, background:C_PDF.white, fontSize:13, fontWeight:600, color:C_PDF.gray, cursor:'pointer', fontFamily:'Arial,sans-serif' }}>Cancel</button>
-          <button type="button" onClick={onClose} style={{ padding:'9px 22px', border:'none', borderRadius:8, background:C_PDF.brand, color:C_PDF.white, fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'Arial,sans-serif' }}>✓ Done</button>
+          <button type="button" onClick={onClose}
+            style={{ padding:'9px 22px', border:`1.5px solid ${C_PDF.border}`, borderRadius:8, background:C_PDF.white, fontSize:13, fontWeight:600, color:C_PDF.gray, cursor:'pointer', fontFamily:'Arial,sans-serif' }}>
+            Cancel
+          </button>
+          <button type="button" onClick={onClose}
+            style={{ padding:'9px 22px', border:'none', borderRadius:8, background:C_PDF.brand, color:C_PDF.white, fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'Arial,sans-serif' }}>
+            ✓ Done
+          </button>
         </div>
       </div>
     </div>
   );
 }
+
 
 
 const PAYMENT_TYPES = ['Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Card', 'Other'];
@@ -264,11 +465,116 @@ const emptyTxn = () => ({
   stage_name: '',
   payment_amount: '', payment_date: '',   // scheduled
   paid_amount: '',   paid_date: '',        // actual
-  payment_type: 'Cash', payment_details: '', received_by: '', remarks: ''
+  payment_type: 'Cash', payment_details: '', received_by: '', remarks: '',
+  attachment_name: '', attachment_data: '',
 });
 
-function PaymentTransactionsModal({ quotation, onClose }) {
+function generateReceipt(txn, quotation) {
+  const logo = 'https://img1.wsimg.com/isteam/ip/e7e3142b-3f26-4173-bc29-b2315178edb8/DI%20logo%20(2).png/:/rs=w:559,h:192,cg:true,m/cr=w:559,h:192/qt=q:95';
+  const paidAmt = Number(txn.paid_amount||0);
+  const grandTotal = Number(quotation.grand_total||0);
+  const paidDate = txn.paid_date ? new Date(txn.paid_date).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}) : '—';
+  const receiptNo = `RCT-${quotation.quotation_id||quotation.id}-${txn.id}`;
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+  <title>Payment Receipt - ${receiptNo}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:Arial,sans-serif;background:#f0f0f0;display:flex;justify-content:center;padding:30px;}
+    .receipt{background:#fff;width:700px;border-radius:4px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.15);}
+    .header{background:#1A1A1A;padding:20px 30px;display:flex;align-items:center;justify-content:space-between;}
+    .header-title{color:#fff;font-size:22px;font-weight:700;letter-spacing:2px;}
+    .header-sub{color:#999;font-size:11px;margin-top:4px;}
+    .brand-bar{height:4px;background:#E8471C;}
+    .body{padding:28px 30px;}
+    .receipt-title{text-align:center;font-size:16px;font-weight:700;letter-spacing:1.5px;color:#1A1A1A;margin-bottom:6px;}
+    .receipt-no{text-align:center;font-size:12px;color:#999;margin-bottom:24px;}
+    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;}
+    .info-box{background:#F8F9FB;border:1px solid #E5E5E5;border-radius:6px;padding:14px;}
+    .info-label{font-size:10px;color:#999;font-weight:700;letter-spacing:0.5px;margin-bottom:4px;}
+    .info-value{font-size:13px;font-weight:700;color:#1A1A1A;}
+    .divider{border:none;border-top:1px solid #E5E5E5;margin:20px 0;}
+    .amount-box{background:#FFF8F6;border:2px solid #E8471C;border-radius:8px;padding:20px 24px;text-align:center;margin-bottom:24px;}
+    .amount-label{font-size:11px;color:#E8471C;font-weight:700;letter-spacing:1px;margin-bottom:6px;}
+    .amount-value{font-size:36px;font-weight:700;color:#E8471C;}
+    .details-table{width:100%;border-collapse:collapse;margin-bottom:24px;font-size:12px;}
+    .details-table th{background:#1A1A1A;color:#fff;padding:8px 12px;text-align:left;font-weight:700;font-size:11px;}
+    .details-table td{padding:10px 12px;border-bottom:1px solid #F0F0F0;color:#333;}
+    .details-table tr:last-child td{border-bottom:none;}
+    .details-table .label{color:#999;font-size:11px;}
+    .footer{background:#F8F9FB;border-top:1px solid #E5E5E5;padding:18px 30px;display:flex;justify-content:space-between;align-items:center;}
+    .sig-block{text-align:center;}
+    .sig-line{width:140px;height:1px;background:#1A1A1A;margin:32px auto 6px;}
+    .sig-name{font-size:11px;font-weight:700;color:#1A1A1A;}
+    .sig-role{font-size:10px;color:#999;}
+    .stamp{width:80px;height:80px;border-radius:50%;border:3px solid #E8471C;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#E8471C;font-weight:700;font-size:10px;letter-spacing:0.5px;text-align:center;}
+    @media print{body{background:#fff;padding:0;}  .receipt{box-shadow:none;}}
+  </style></head><body>
+  <div class="receipt">
+    <div class="header">
+      <div>
+        <div class="header-title">PAYMENT RECEIPT</div>
+        <div class="header-sub">Deeraj Interiors — Official Receipt</div>
+      </div>
+      <img src="${logo}" style="height:44px;width:auto;" crossorigin="anonymous" />
+    </div>
+    <div class="brand-bar"></div>
+    <div class="body">
+      <div class="receipt-title">RECEIPT OF PAYMENT</div>
+      <div class="receipt-no">Receipt No: ${receiptNo} &nbsp;|&nbsp; Date: ${paidDate}</div>
+      <div class="info-grid">
+        <div class="info-box">
+          <div class="info-label">RECEIVED FROM</div>
+          <div class="info-value">${quotation.customer_name||'—'}</div>
+          ${quotation.mobile ? `<div style="font-size:12px;color:#666;margin-top:3px;">📞 ${quotation.mobile}</div>` : ''}
+          ${quotation.location ? `<div style="font-size:12px;color:#666;margin-top:2px;">📍 ${quotation.location}</div>` : ''}
+        </div>
+        <div class="info-box">
+          <div class="info-label">PROJECT DETAILS</div>
+          <div class="info-value">${quotation.site_name||quotation.project_type||'Interior Project'}</div>
+          <div style="font-size:12px;color:#666;margin-top:3px;">QID: #${quotation.quotation_id||quotation.id}</div>
+          ${txn.stage_name ? `<div style="font-size:12px;color:#E8471C;margin-top:2px;font-weight:700;">Stage: ${txn.stage_name}</div>` : ''}
+        </div>
+      </div>
+      <div class="amount-box">
+        <div class="amount-label">AMOUNT RECEIVED</div>
+        <div class="amount-value">₹${paidAmt.toLocaleString('en-IN')}</div>
+      </div>
+      <table class="details-table">
+        <thead><tr><th>PARTICULARS</th><th>DETAILS</th></tr></thead>
+        <tbody>
+          <tr><td class="label">Payment Mode</td><td><strong>${txn.payment_type||'Cash'}</strong></td></tr>
+          ${txn.payment_details ? `<tr><td class="label">Reference No.</td><td>${txn.payment_details}</td></tr>` : ''}
+          ${txn.received_by ? `<tr><td class="label">Received By</td><td>${txn.received_by}</td></tr>` : ''}
+          ${txn.remarks ? `<tr><td class="label">Remarks</td><td>${txn.remarks}</td></tr>` : ''}
+          <tr><td class="label">Grand Total</td><td>₹${grandTotal.toLocaleString('en-IN')}</td></tr>
+        </tbody>
+      </table>
+      <div class="divider"></div>
+      <div class="footer">
+        <div class="sig-block">
+          <div class="sig-line"></div>
+          <div class="sig-name">${quotation.site_manager_name||'Site Manager'}</div>
+          <div class="sig-role">Authorized Signatory</div>
+        </div>
+        <div class="stamp">PAYMENT<br/>RECEIVED<br/>✓</div>
+        <div class="sig-block">
+          <div class="sig-line"></div>
+          <div class="sig-name">${quotation.customer_name||'Customer'}</div>
+          <div class="sig-role">Customer Signature</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>window.onload=()=>window.print();</script>
+  </body></html>`;
+
+  const w = window.open('', '_blank');
+  if (w) { w.document.write(html); w.document.close(); }
+}
+
+function PaymentTransactionsModal({ quotation, onClose, onPaymentSaved }) {
   const overlayRef = useRef();
+  const fileRef = useRef();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [form, setForm] = useState(emptyTxn());
@@ -294,6 +600,17 @@ function PaymentTransactionsModal({ quotation, onClose }) {
   const totalPaid = transactions.reduce((s, t) => s + Number(t.paid_amount || 0), 0);
   const balance   = grandTotal - totalPaid;
 
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error('File too large. Max 5MB.'); return; }
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setForm(p => ({ ...p, attachment_data: ev.target.result, attachment_name: file.name }));
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSave = async () => {
     const hasPaymentAmt = form.payment_amount && Number(form.payment_amount) > 0;
     const hasPaidAmt    = form.paid_amount    && Number(form.paid_amount)    > 0;
@@ -307,10 +624,12 @@ function PaymentTransactionsModal({ quotation, onClose }) {
         toast.success('Record updated');
       } else {
         await api.post(`/quotations/${quotation.id}/transactions`, form);
-        toast.success('Record added');
+        toast.success('Payment recorded');
       }
       setForm(emptyTxn()); setEditingId(null);
+      if (fileRef.current) fileRef.current.value = '';
       fetchTxns();
+      if (onPaymentSaved) onPaymentSaved();
     } catch (err) {
       const msg = err.response?.data?.message || 'Failed to save';
       toast.error(msg);
@@ -321,15 +640,17 @@ function PaymentTransactionsModal({ quotation, onClose }) {
   const handleEdit = (txn) => {
     setEditingId(txn.id);
     setForm({
-      stage_name:     txn.stage_name     || '',
-      payment_amount: txn.payment_amount ? String(txn.payment_amount) : '',
-      payment_date:   txn.payment_date   || '',
-      paid_amount:    txn.paid_amount    ? String(txn.paid_amount)    : '',
-      paid_date:      txn.paid_date      || '',
-      payment_type:   txn.payment_type   || 'Cash',
-      payment_details:txn.payment_details|| '',
-      received_by:    txn.received_by    || '',
-      remarks:        txn.remarks        || '',
+      stage_name:      txn.stage_name      || '',
+      payment_amount:  txn.payment_amount  ? String(txn.payment_amount) : '',
+      payment_date:    txn.payment_date    || '',
+      paid_amount:     txn.paid_amount     ? String(txn.paid_amount)    : '',
+      paid_date:       txn.paid_date       || '',
+      payment_type:    txn.payment_type    || 'Cash',
+      payment_details: txn.payment_details || '',
+      received_by:     txn.received_by     || '',
+      remarks:         txn.remarks         || '',
+      attachment_name: txn.attachment_name || '',
+      attachment_data: txn.attachment_data || '',
     });
   };
 
@@ -338,13 +659,16 @@ function PaymentTransactionsModal({ quotation, onClose }) {
     await api.delete(`/transactions/${id}`);
     toast.success('Deleted');
     fetchTxns();
+    if (onPaymentSaved) onPaymentSaved();
   };
+
+  const handleClose = () => { if (onPaymentSaved) onPaymentSaved(); onClose(); };
 
   const C = { brand:'#E8471C', dark:'#1A1A1A', gray:'#666', border:'#E0E0E0', white:'#fff', altRow:'#FAFAFA', green:'#10B981', red:'#EF4444' };
   const inp = { width:'100%', border:`1.5px solid ${C.border}`, borderRadius:8, padding:'8px 12px', fontSize:13, fontFamily:"'DM Sans',sans-serif", color:C.dark, outline:'none', boxSizing:'border-box', background:C.white };
 
   return (
-    <div ref={overlayRef} onClick={e=>e.target===overlayRef.current&&onClose()}
+    <div ref={overlayRef} onClick={e=>e.target===overlayRef.current&&handleClose()}
       style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:9999,display:'flex',alignItems:'flex-start',justifyContent:'center',overflowY:'auto',padding:'24px 12px'}}>
       <div style={{background:C.white,borderRadius:16,width:'100%',maxWidth:1100,boxShadow:'0 20px 60px rgba(0,0,0,0.3)',fontFamily:"'DM Sans',sans-serif",overflow:'hidden'}}>
 
@@ -367,7 +691,7 @@ function PaymentTransactionsModal({ quotation, onClose }) {
               <div style={{fontSize:11,color:C.gray}}>Grand Total</div>
               <div style={{fontSize:16,fontWeight:700,color:C.dark}}>₹{grandTotal.toLocaleString('en-IN')}</div>
             </div>
-            <button onClick={onClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:C.gray,padding:'2px 6px',lineHeight:1}}>✕</button>
+            <button onClick={handleClose} style={{background:'none',border:'none',fontSize:22,cursor:'pointer',color:C.gray,padding:'2px 6px',lineHeight:1}}>✕</button>
           </div>
         </div>
 
@@ -435,13 +759,30 @@ function PaymentTransactionsModal({ quotation, onClose }) {
                 <input placeholder="Optional note" value={form.remarks} onChange={e=>setForm(p=>({...p,remarks:e.target.value}))} style={inp} />
               </div>
             </div>
+
+            {/* Row 4: File Attachment */}
+            <div style={{marginBottom:14}}>
+              <label style={{fontSize:11,fontWeight:700,color:C.gray,display:'block',marginBottom:4}}>📎 ATTACH FILE (screenshot / receipt / cheque image — max 5MB)</label>
+              <div style={{display:'flex',alignItems:'center',gap:10}}>
+                <input ref={fileRef} type="file" accept="image/*,application/pdf" onChange={handleFile}
+                  style={{...inp,padding:'6px 10px',cursor:'pointer',flex:1}} />
+                {form.attachment_name && (
+                  <div style={{display:'flex',alignItems:'center',gap:6,background:'#EFF6FF',border:'1.5px solid #BFDBFE',borderRadius:8,padding:'6px 12px',fontSize:12,color:'#1D4ED8',fontWeight:600,whiteSpace:'nowrap'}}>
+                    📄 {form.attachment_name}
+                    <button onClick={()=>{setForm(p=>({...p,attachment_name:'',attachment_data:''}));if(fileRef.current)fileRef.current.value='';}}
+                      style={{background:'none',border:'none',cursor:'pointer',color:'#EF4444',fontSize:14,lineHeight:1,padding:'0 2px'}}>✕</button>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <div style={{display:'flex',gap:10}}>
               <button onClick={handleSave} disabled={saving}
                 style={{padding:'9px 22px',background:C.brand,color:C.white,border:'none',borderRadius:8,fontSize:13,fontWeight:700,cursor:'pointer',fontFamily:"'DM Sans',sans-serif"}}>
                 {saving ? 'Saving…' : editingId ? '✓ Update' : '+ Record Payment'}
               </button>
               {editingId && (
-                <button onClick={()=>{setEditingId(null);setForm(emptyTxn());}}
+                <button onClick={()=>{setEditingId(null);setForm(emptyTxn());if(fileRef.current)fileRef.current.value='';}}
                   style={{padding:'9px 18px',background:C.white,color:C.gray,border:`1.5px solid ${C.border}`,borderRadius:8,fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:"'DM Sans',sans-serif"}}>
                   Cancel
                 </button>
@@ -473,8 +814,8 @@ function PaymentTransactionsModal({ quotation, onClose }) {
                     <th style={{padding:'8px 10px',textAlign:'left',color:C.white,fontWeight:700,fontSize:11,minWidth:80}}>Type</th>
                     <th style={{padding:'8px 10px',textAlign:'left',color:C.white,fontWeight:700,fontSize:11,minWidth:110}}>Details</th>
                     <th style={{padding:'8px 10px',textAlign:'left',color:C.white,fontWeight:700,fontSize:11,minWidth:90}}>Received By</th>
-                    <th style={{padding:'8px 10px',textAlign:'left',color:C.white,fontWeight:700,fontSize:11,minWidth:90}}>Remarks</th>
-                    <th style={{padding:'8px 6px',width:70}}></th>
+                    <th style={{padding:'8px 10px',textAlign:'left',color:C.white,fontWeight:700,fontSize:11,minWidth:70}}>File</th>
+                    <th style={{padding:'8px 6px',width:110,color:C.white,fontWeight:700,fontSize:11}}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -491,12 +832,21 @@ function PaymentTransactionsModal({ quotation, onClose }) {
                       </td>
                       <td style={{padding:'8px 10px',color:C.gray,maxWidth:110,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={txn.payment_details}>{txn.payment_details||'—'}</td>
                       <td style={{padding:'8px 10px',color:C.dark,whiteSpace:'nowrap'}}>{txn.received_by||'—'}</td>
-                      <td style={{padding:'8px 10px',color:C.gray,maxWidth:90,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={txn.remarks}>{txn.remarks||'—'}</td>
+                      <td style={{padding:'8px 10px'}}>
+                        {txn.attachment_data ? (
+                          <a href={txn.attachment_data} download={txn.attachment_name||'attachment'}
+                            style={{background:'#F0FDF4',border:'1.5px solid #BBF7D0',borderRadius:6,padding:'4px 8px',fontSize:11,color:'#15803D',fontWeight:600,textDecoration:'none',whiteSpace:'nowrap'}}>
+                            📎 {txn.attachment_name ? txn.attachment_name.substring(0,10)+(txn.attachment_name.length>10?'…':'') : 'File'}
+                          </a>
+                        ) : <span style={{color:'#CCC',fontSize:11}}>—</span>}
+                      </td>
                       <td style={{padding:'8px 6px',whiteSpace:'nowrap',textAlign:'right'}}>
+                        <button onClick={()=>generateReceipt(txn,quotation)} title="Print Receipt"
+                          style={{background:'#FFF8F6',border:'none',borderRadius:6,padding:'5px 8px',cursor:'pointer',color:C.brand,fontSize:12,marginRight:3}}>🧾</button>
                         <button onClick={()=>handleEdit(txn)}
-                          style={{background:'#EFF6FF',border:'none',borderRadius:6,padding:'5px 10px',cursor:'pointer',color:'#1D4ED8',fontSize:12,marginRight:4}}>✏️</button>
+                          style={{background:'#EFF6FF',border:'none',borderRadius:6,padding:'5px 8px',cursor:'pointer',color:'#1D4ED8',fontSize:12,marginRight:3}}>✏️</button>
                         <button onClick={()=>handleDelete(txn.id)}
-                          style={{background:'#FFF0F0',border:'none',borderRadius:6,padding:'5px 10px',cursor:'pointer',color:C.red,fontSize:12}}>🗑</button>
+                          style={{background:'#FFF0F0',border:'none',borderRadius:6,padding:'5px 8px',cursor:'pointer',color:C.red,fontSize:12}}>🗑</button>
                       </td>
                     </tr>
                   ))}
@@ -1492,6 +1842,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
               clientName={clientName}
               smName={smName}
               grandTotal={grandTotal}
+              quotationId={data.id}
             />,
             document.body
           )}
@@ -1599,7 +1950,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   return (
     <div className="list-page fade-up">
       {paymentQ && ReactDOM.createPortal(
-        <PaymentTransactionsModal quotation={paymentQ} onClose={()=>setPaymentQ(null)} />,
+        <PaymentTransactionsModal quotation={paymentQ} onClose={()=>setPaymentQ(null)} onPaymentSaved={fetchAll} />,
         document.body
       )}
       {selected && <ViewModal key={selected.id+'_'+(selected.updated_at||selected.created_at||Math.random())} data={selected} onClose={()=>setSelected(null)} canDelete={canDelete} onDelete={(id)=>{ handleDelete(id); setSelected(null); }}/>}
