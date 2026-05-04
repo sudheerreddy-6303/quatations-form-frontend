@@ -718,11 +718,11 @@ export default function QuotationForm() {
             </h2>
           </div>
           <div className="project-type-grid">
-            {['2BHK','4BHK','Villa','Commercial Project','Others'].map(type => (
+            {['2BHK','3BHK','4BHK','Villa','Commercial Project','Others'].map(type => (
               <label key={type} className={`project-type-card ${projectType === type ? 'selected' : ''}`}>
                 <input type="radio" name="projectType" value={type} checked={projectType === type} onChange={() => setProjectType(type)} />
                 <span className="project-type-icon">
-                  {type === '2BHK' ? '🏠' : type === '4BHK' ? '🏡' : type === 'Villa' ? '🏰' : type === 'Commercial Project' ? '🏢' : '📋'}
+                  {type === '2BHK' ? '🏠' : type === '3BHK' ? '🏠' : type === '4BHK' ? '🏡' : type === 'Villa' ? '🏰' : type === 'Commercial Project' ? '🏢' : '📋'}
                 </span>
                 <span className="project-type-label">{type}</span>
               </label>
@@ -829,7 +829,7 @@ export default function QuotationForm() {
               <label className="field-label">Branch</label>
               <select className="field-input field-select" value={smBranch} onChange={e => setSmBranch(e.target.value)}>
                 <option value="">— Select Branch —</option>
-                {['Kokapet','Kompally','Medchal','Bheemavaram'].map(b => (
+                {['Kompally','Medchal','Gachibowli','Bheemavaram'].map(b => (
                   <option key={b} value={b}>{b}</option>
                 ))}
               </select>

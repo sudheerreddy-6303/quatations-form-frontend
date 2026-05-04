@@ -14,6 +14,7 @@ const VALID_USERS = [
   { username: 'veera',   password: 'veera@123',     display: 'Veera',         role: 'manager' },
   { username: 'teja',    password: 'teja@123',      display: 'Teja',          role: 'manager' },
   { username: 'sakshi',  password: 'sakshi@123',    display: 'Sakshi',        role: 'manager' },
+  { username: 'Ramya',  password: 'ramya@123',    display: 'Ramya',        role: 'manager' },
 ];
 
 export default function Login({ onLogin }) {

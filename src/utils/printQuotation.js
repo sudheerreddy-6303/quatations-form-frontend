@@ -130,7 +130,18 @@ function tableSection(label, items, isAccessory, color='#E8471C', bg='#FFF0EC') 
     </table>`;
 }
 
-export function printQuotation(data) {
+export function printQuotation(data, transactions=[]) {
+  // Build transaction map by stage
+  const txnByStage = {};
+  (transactions||[]).forEach(t => {
+    const key = (t.stage_name||'').trim().toLowerCase();
+    if (!txnByStage[key]) txnByStage[key] = { paid:0, txns:[] };
+    txnByStage[key].paid += Number(t.paid_amount||0);
+    txnByStage[key].txns.push(t);
+  });
+  const getStageTxn = (name) => txnByStage[(name||'').trim().toLowerCase()] || { paid:0, txns:[] };
+  const totalTxnPaid = (transactions||[]).reduce((s,t)=>s+Number(t.paid_amount||0),0);
+
   const rooms  = data.rooms || {};
   const rawCd  = data.ceiling_data || {};
   const isNewFmt = rawCd.ceiling||rawCd.electrical||rawCd.wooden||rawCd.marble||rawCd.general;
@@ -385,12 +396,62 @@ export function printQuotation(data) {
     ${pageHeader(invoiceDate, smPhone, false)}
     <div class="body-pad" style="padding-top:20px">
       <div class="section-title-big" style="text-align:center;letter-spacing:1px">STAGE WISE PAYMENT SCHEDULE</div>
-      <table class="pay-table">
-        <thead><tr>${['Payment Stages','Payment Amt','Payment Date','Paid Amt','Paid Date','Payment Type','Payment Details','Received By'].map(h=>`<th>${h}</th>`).join('')}</tr></thead>
-        <tbody>
-          ${(()=>{ let ps=data.pay_stages; if(typeof ps==='string'&&ps){try{ps=JSON.parse(ps);}catch{ps=null;}} if(!Array.isArray(ps)||!ps.length)ps=PAY_STAGES; return ps.map((r,i)=>{ const row=typeof r==='string'?{stage:r,amount:'',notes:''}:{stage:r.stage||'',amount:r.amount||'',notes:r.notes||''}; const amtCell=row.amount?`<td style="color:#E8471C;font-weight:700">Rs. ${Number(row.amount).toLocaleString('en-IN')}</td>`:'<td></td>'; return `<tr style="background:${i%2===1?'#FAFAFA':'#fff'}"><td style="font-weight:${row.stage?'600':'normal'}">${row.stage||''}</td>${amtCell}<td></td><td></td><td></td><td></td><td style="color:#555">${row.notes||''}</td><td></td></tr>`; }).join(''); })()}
-        </tbody>
-      </table>
+      ${(()=>{
+        let ps=data.pay_stages;
+        if(typeof ps==='string'&&ps){try{ps=JSON.parse(ps);}catch{ps=null;}}
+        if(!Array.isArray(ps)||!ps.length)ps=PAY_STAGES;
+        const rows=ps.map(r=>typeof r==='string'?{stage:r,paymentAmount:'',paymentDate:''}:r);
+        const totalSched=rows.reduce((s,r)=>s+(parseFloat(r.paymentAmount)||0),0);
+        const toDisp=(d)=>{if(!d)return '-';const m=d.match(/^(\d{4})-(\d{2})-(\d{2})$/);if(m)return `${m[3]}/${m[2]}/${m[1]}`;return d;};
+        const summaryBar=`<div style="display:flex;gap:12px;justify-content:center;margin-bottom:12px;">
+          <div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:6px;padding:5px 14px;text-align:center;">
+            <div style="font-size:8px;color:#1D4ED8;font-weight:700;letter-spacing:0.5px;">TOTAL SCHEDULED</div>
+            <div style="font-size:13px;font-weight:700;color:#1D4ED8;">&#8377;${totalSched.toLocaleString('en-IN')}</div>
+          </div>
+          <div style="background:#F0FDF4;border:1.5px solid #BBF7D0;border-radius:6px;padding:5px 14px;text-align:center;">
+            <div style="font-size:8px;color:#15803D;font-weight:700;letter-spacing:0.5px;">TOTAL RECEIVED</div>
+            <div style="font-size:13px;font-weight:700;color:#15803D;">&#8377;${totalTxnPaid.toLocaleString('en-IN')}</div>
+          </div>
+          <div style="background:${totalSched-totalTxnPaid>0?'#FFF5F5':'#F0FDF4'};border:1.5px solid ${totalSched-totalTxnPaid>0?'#FECACA':'#BBF7D0'};border-radius:6px;padding:5px 14px;text-align:center;">
+            <div style="font-size:8px;font-weight:700;letter-spacing:0.5px;color:${totalSched-totalTxnPaid>0?'#DC2626':'#15803D'};">BALANCE</div>
+            <div style="font-size:13px;font-weight:700;color:${totalSched-totalTxnPaid>0?'#DC2626':'#15803D'};">&#8377;${(totalSched-totalTxnPaid).toLocaleString('en-IN')}</div>
+          </div>
+        </div>`;
+        const tableRows=rows.map((row,i)=>{
+          const stxn=getStageTxn(row.stage);
+          const totalPaid=stxn.paid;
+          const scheduled=parseFloat(row.paymentAmount)||0;
+          const latestTxn=stxn.txns[stxn.txns.length-1]||null;
+          const isPaid=totalPaid>=scheduled&&scheduled>0;
+          const isPartial=totalPaid>0&&totalPaid<scheduled;
+          const rowBg=isPaid?'#F0FDF4':isPartial?'#FFFBEB':i%2===1?'#FAFAFA':'#fff';
+          return `<tr style="background:${rowBg}">
+            <td style="padding:7px;border:1px solid #E0E0E0;font-weight:700;font-size:9px;">${row.stage||''}${isPaid?' <span style="color:#15803D">&#10003;</span>':''}</td>
+            <td style="padding:7px;border:1px solid #E0E0E0;font-size:9px;font-weight:${scheduled?700:400};color:${scheduled?'#1D4ED8':'#CCC'};text-align:right;">${scheduled?'&#8377;'+scheduled.toLocaleString('en-IN'):'-'}</td>
+            <td style="padding:7px;border:1px solid #E0E0E0;font-size:9px;color:#555;">${toDisp(row.paymentDate)}</td>
+            <td style="padding:7px;border:1px solid #E0E0E0;font-size:9px;font-weight:700;color:${totalPaid>0?'#15803D':'#CCC'};text-align:right;">${totalPaid>0?'&#8377;'+totalPaid.toLocaleString('en-IN'):'-'}</td>
+            <td style="padding:7px;border:1px solid #E0E0E0;font-size:9px;color:#555;">${latestTxn&&latestTxn.paid_date?toDisp(latestTxn.paid_date):'-'}</td>
+            <td style="padding:7px;border:1px solid #E0E0E0;font-size:9px;">${latestTxn&&latestTxn.payment_type?`<span style="background:#EFF6FF;color:#1D4ED8;border-radius:10px;padding:1px 6px;font-size:8px;font-weight:600;">${latestTxn.payment_type}</span>`:'-'}</td>
+            <td style="padding:7px;border:1px solid #E0E0E0;font-size:9px;color:#555;max-width:80px;overflow:hidden;white-space:nowrap;">${latestTxn&&latestTxn.payment_details?latestTxn.payment_details:'-'}</td>
+            <td style="padding:7px;border:1px solid #E0E0E0;font-size:9px;color:#555;">${latestTxn&&latestTxn.received_by?latestTxn.received_by:'-'}</td>
+          </tr>`;
+        }).join('');
+        return summaryBar+`<table class="pay-table">
+          <thead><tr>
+            <th>Payment Stage</th><th>Scheduled (&#8377;)</th><th>Due Date</th>
+            <th style="color:#86EFAC;">&#10003; Actual Paid (&#8377;)</th><th style="color:#86EFAC;">Paid Date</th>
+            <th style="color:#86EFAC;">Mode</th><th style="color:#86EFAC;">Ref/Details</th><th style="color:#86EFAC;">Received By</th>
+          </tr></thead>
+          <tbody>${tableRows}</tbody>
+          <tfoot><tr style="background:#F0FDF4;font-weight:700;">
+            <td style="padding:7px;border:1px solid #E0E0E0;font-size:9px;">TOTAL</td>
+            <td style="padding:7px;border:1px solid #E0E0E0;font-size:9px;color:#1D4ED8;text-align:right;">&#8377;${totalSched.toLocaleString('en-IN')}</td>
+            <td style="padding:7px;border:1px solid #E0E0E0;"></td>
+            <td style="padding:7px;border:1px solid #E0E0E0;font-size:9px;color:#15803D;text-align:right;">&#8377;${totalTxnPaid.toLocaleString('en-IN')}</td>
+            <td colspan="4" style="padding:7px;border:1px solid #E0E0E0;font-size:9px;color:${totalSched-totalTxnPaid>0?'#DC2626':'#15803D'};font-weight:700;">Balance: &#8377;${(totalSched-totalTxnPaid).toLocaleString('en-IN')}</td>
+          </tr></tfoot>
+        </table>`;
+      })()}
     </div>
   </div>
 </div>

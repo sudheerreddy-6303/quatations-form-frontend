@@ -469,104 +469,219 @@ const emptyTxn = () => ({
   attachment_name: '', attachment_data: '',
 });
 
-function generateReceipt(txn, quotation) {
+function generateReceipt(txn, quotation, allTransactions=[]) {
   const logo = 'https://img1.wsimg.com/isteam/ip/e7e3142b-3f26-4173-bc29-b2315178edb8/DI%20logo%20(2).png/:/rs=w:559,h:192,cg:true,m/cr=w:559,h:192/qt=q:95';
-  const paidAmt = Number(txn.paid_amount||0);
-  const grandTotal = Number(quotation.grand_total||0);
-  const paidDate = txn.paid_date ? new Date(txn.paid_date).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}) : '—';
-  const receiptNo = `RCT-${quotation.quotation_id||quotation.id}-${txn.id}`;
-  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
-  <title>Payment Receipt - ${receiptNo}</title>
+  const grandTotal = Number(quotation.grand_total || 0);
+  const fmtAmt = (n) => '₹' + Number(n||0).toLocaleString('en-IN');
+  const inWords = (n) => {
+    const a = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+    const b = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+    const toW = (num) => {
+      if (num === 0) return '';
+      if (num < 20) return a[num];
+      if (num < 100) return b[Math.floor(num/10)] + (num%10?' '+a[num%10]:'');
+      if (num < 1000) return a[Math.floor(num/100)]+' Hundred'+(num%100?' '+toW(num%100):'');
+      if (num < 100000) return toW(Math.floor(num/1000))+' Thousand'+(num%1000?' '+toW(num%1000):'');
+      if (num < 10000000) return toW(Math.floor(num/100000))+' Lakh'+(num%100000?' '+toW(num%100000):'');
+      return toW(Math.floor(num/10000000))+' Crore'+(num%10000000?' '+toW(num%10000000):'');
+    };
+    return (toW(Math.floor(Math.abs(n)))||'Zero') + ' Rupees Only';
+  };
+  const fmtDate = (d) => { if (!d) return '—'; try { return new Date(d).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'}); } catch { return d; } };
+
+  const sorted    = [...allTransactions].sort((a,b) => (a.id||0)-(b.id||0));
+  const txnIndex  = sorted.findIndex(t => t.id === txn.id);
+  const paidUpTo  = sorted.slice(0, txnIndex+1).reduce((s,x)=>s+Number(x.paid_amount||0),0);
+  const balance   = grandTotal - paidUpTo;
+  const prevTxns  = sorted.slice(0, txnIndex + 1); // include current payment
+  const amt       = Number(txn.paid_amount||0);
+  const rNo       = `RCT-${quotation.quotation_id||quotation.id}-${String(txn.id).padStart(3,'0')}`;
+
+  const modeChecks = ['Cash','Cheque No','UPI / Online','Money Order'].map(m => {
+    const checked = (txn.payment_type||'').toLowerCase().includes(m.split(' ')[0].toLowerCase());
+    const lineField = m === 'Cheque No' ? ` <span class="check-line">${(!['Cash','UPI','Online'].some(x=>(txn.payment_type||'').includes(x))&&txn.payment_details)?txn.payment_details:'___________'}</span>` : '';
+    return `<span class="check-item"><span class="chk">${checked?'☑':'☐'}</span> ${m}${lineField}</span>`;
+  }).join('  ');
+
+  const prevRows = prevTxns.length > 0 ? prevTxns.map((t,i) => {
+    const runTotal = sorted.slice(0,i+1).reduce((s,x)=>s+Number(x.paid_amount||0),0);
+    const isCurrent = t.id === txn.id;
+    const rowBg = isCurrent ? '#FFF3EF' : (i%2===0?'#FAFAFA':'#fff');
+    const currentMark = isCurrent ? ' ◀ This Receipt' : '';
+    return `<tr style="background:${rowBg};${isCurrent?'border-left:3px solid #E8471C;font-weight:700;':'' }">
+      <td>${String(i+1).padStart(2,'0')}</td>
+      <td>RCT-${quotation.quotation_id||quotation.id}-${String(t.id).padStart(3,'0')}${isCurrent?` <span style="background:#E8471C;color:#fff;font-size:8px;padding:1px 5px;border-radius:8px;margin-left:4px;">CURRENT</span>`:''}</td>
+      <td>${t.stage_name||'—'}</td>
+      <td>${fmtDate(t.paid_date)}</td>
+      <td>${t.payment_type||'—'}</td>
+      <td>${t.payment_details||'—'}</td>
+      <td style="text-align:right;font-weight:700;color:${isCurrent?'#E8471C':'#1A1A1A'};">${fmtAmt(t.paid_amount)}</td>
+      <td style="text-align:right;color:#15803D;font-weight:600;">${fmtAmt(runTotal)}</td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="8" style="text-align:center;color:#AAA;padding:12px;font-style:italic;">No payments found</td></tr>`;
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Receipt ${rNo}</title>
   <style>
-    *{margin:0;padding:0;box-sizing:border-box;}
-    body{font-family:Arial,sans-serif;background:#f0f0f0;display:flex;justify-content:center;padding:30px;}
-    .receipt{background:#fff;width:700px;border-radius:4px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.15);}
-    .header{background:#1A1A1A;padding:20px 30px;display:flex;align-items:center;justify-content:space-between;}
-    .header-title{color:#fff;font-size:22px;font-weight:700;letter-spacing:2px;}
-    .header-sub{color:#999;font-size:11px;margin-top:4px;}
-    .brand-bar{height:4px;background:#E8471C;}
-    .body{padding:28px 30px;}
-    .receipt-title{text-align:center;font-size:16px;font-weight:700;letter-spacing:1.5px;color:#1A1A1A;margin-bottom:6px;}
-    .receipt-no{text-align:center;font-size:12px;color:#999;margin-bottom:24px;}
-    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;}
-    .info-box{background:#F8F9FB;border:1px solid #E5E5E5;border-radius:6px;padding:14px;}
-    .info-label{font-size:10px;color:#999;font-weight:700;letter-spacing:0.5px;margin-bottom:4px;}
-    .info-value{font-size:13px;font-weight:700;color:#1A1A1A;}
-    .divider{border:none;border-top:1px solid #E5E5E5;margin:20px 0;}
-    .amount-box{background:#FFF8F6;border:2px solid #E8471C;border-radius:8px;padding:20px 24px;text-align:center;margin-bottom:24px;}
-    .amount-label{font-size:11px;color:#E8471C;font-weight:700;letter-spacing:1px;margin-bottom:6px;}
-    .amount-value{font-size:36px;font-weight:700;color:#E8471C;}
-    .details-table{width:100%;border-collapse:collapse;margin-bottom:24px;font-size:12px;}
-    .details-table th{background:#1A1A1A;color:#fff;padding:8px 12px;text-align:left;font-weight:700;font-size:11px;}
-    .details-table td{padding:10px 12px;border-bottom:1px solid #F0F0F0;color:#333;}
-    .details-table tr:last-child td{border-bottom:none;}
-    .details-table .label{color:#999;font-size:11px;}
-    .footer{background:#F8F9FB;border-top:1px solid #E5E5E5;padding:18px 30px;display:flex;justify-content:space-between;align-items:center;}
-    .sig-block{text-align:center;}
-    .sig-line{width:140px;height:1px;background:#1A1A1A;margin:32px auto 6px;}
-    .sig-name{font-size:11px;font-weight:700;color:#1A1A1A;}
-    .sig-role{font-size:10px;color:#999;}
-    .stamp{width:80px;height:80px;border-radius:50%;border:3px solid #E8471C;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#E8471C;font-weight:700;font-size:10px;letter-spacing:0.5px;text-align:center;}
-    @media print{body{background:#fff;padding:0;}  .receipt{box-shadow:none;}}
-  </style></head><body>
-  <div class="receipt">
-    <div class="header">
-      <div>
-        <div class="header-title">PAYMENT RECEIPT</div>
-        <div class="header-sub">Deeraj Interiors — Official Receipt</div>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family:'Arial',sans-serif; font-size:12px; background:#e0e0e0; padding:24px; display:flex; flex-direction:column; align-items:center; }
+
+    .receipt-block {
+      background:#fff;
+      width:680px;
+      border:1.5px solid #bbb;
+      margin-bottom:0;
+    }
+
+    .r-title-row {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:12px 20px 10px; border-bottom:2.5px solid #1A1A1A;
+    }
+    .r-title-left { display:flex; align-items:center; gap:12px; }
+    .r-logo { height:36px; width:auto; }
+    .r-company-name { font-size:14px; font-weight:800; color:#1A1A1A; }
+    .r-company-sub  { font-size:9px; color:#888; }
+    .r-head { font-size:21px; font-weight:800; color:#1A1A1A; letter-spacing:0.5px; }
+
+    .r-meta-row {
+      padding:6px 20px; font-size:11px; color:#333;
+      display:flex; align-items:center; border-bottom:1px solid #ddd;
+    }
+    .r-meta-val { font-weight:700; color:#1A1A1A; border-bottom:1px solid #555; padding-bottom:1px; margin-left:4px; }
+
+    .r-divider { border-top:1px dashed #ccc; margin:0 20px; }
+
+    .r-row {
+      padding:7px 20px; display:flex; align-items:center;
+      flex-wrap:wrap; gap:4px; font-size:11px; color:#333; line-height:1.6;
+    }
+    .r-field { display:inline-flex; align-items:baseline; gap:4px; font-size:11px; }
+    .r-field-line { border-bottom:1px solid #555; min-width:120px; display:inline-block; font-weight:700; color:#1A1A1A; padding-bottom:1px; }
+    .r-label { font-weight:700; color:#1A1A1A; margin-right:6px; white-space:nowrap; }
+    .r-recvby { font-style:italic; color:#444; font-size:10.5px; }
+
+    .check-item { font-size:11px; color:#333; margin-right:14px; }
+    .chk { font-size:13px; }
+    .check-line { border-bottom:1px solid #555; min-width:80px; display:inline-block; margin-left:3px; }
+
+    .r-total-bar {
+      background:#2a2a2a; color:#fff;
+      display:flex; justify-content:space-between;
+      padding:8px 20px; font-size:12px; font-weight:600;
+    }
+    .r-total-bar strong { font-size:13px; }
+
+    /* Previous payments section */
+    .prev-section {
+      width:680px; background:#fff;
+      border:1.5px solid #bbb; border-top:none;
+      padding:16px 20px 20px;
+    }
+    .prev-title {
+      font-size:12px; font-weight:700; color:#1A1A1A;
+      letter-spacing:0.3px; margin-bottom:10px;
+      padding-bottom:6px; border-bottom:2px solid #1A1A1A;
+      display:flex; justify-content:space-between;
+    }
+    .prev-title span { font-size:10px; color:#888; font-weight:400; }
+    table.prev-tbl { width:100%; border-collapse:collapse; font-size:10.5px; }
+    table.prev-tbl thead tr { background:#1A1A1A; }
+    table.prev-tbl thead th { color:#fff; padding:6px 8px; text-align:left; font-size:9.5px; font-weight:700; letter-spacing:0.3px; }
+    table.prev-tbl thead th:last-child,
+    table.prev-tbl thead th:nth-last-child(2) { text-align:right; }
+    table.prev-tbl tbody td { padding:7px 8px; border-bottom:1px solid #F0F0F0; color:#333; }
+    table.prev-tbl tbody tr:last-child td { border-bottom:none; }
+
+    @media print {
+      body { background:#fff; padding:0; }
+      .receipt-block, .prev-section { box-shadow:none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Single Receipt -->
+  <div class="receipt-block">
+    <div class="r-title-row">
+      <div class="r-title-left">
+        <img src="${logo}" class="r-logo" crossorigin="anonymous"/>
+        <div>
+          <div class="r-company-name">Deeraj Interiors</div>
+          <div class="r-company-sub">Interior Design &amp; Execution</div>
+        </div>
       </div>
-      <img src="${logo}" style="height:44px;width:auto;" crossorigin="anonymous" />
+      <span class="r-head">Payment Receipt</span>
     </div>
-    <div class="brand-bar"></div>
-    <div class="body">
-      <div class="receipt-title">RECEIPT OF PAYMENT</div>
-      <div class="receipt-no">Receipt No: ${receiptNo} &nbsp;|&nbsp; Date: ${paidDate}</div>
-      <div class="info-grid">
-        <div class="info-box">
-          <div class="info-label">RECEIVED FROM</div>
-          <div class="info-value">${quotation.customer_name||'—'}</div>
-          ${quotation.mobile ? `<div style="font-size:12px;color:#666;margin-top:3px;">📞 ${quotation.mobile}</div>` : ''}
-          ${quotation.location ? `<div style="font-size:12px;color:#666;margin-top:2px;">📍 ${quotation.location}</div>` : ''}
-        </div>
-        <div class="info-box">
-          <div class="info-label">PROJECT DETAILS</div>
-          <div class="info-value">${quotation.site_name||quotation.project_type||'Interior Project'}</div>
-          <div style="font-size:12px;color:#666;margin-top:3px;">QID: #${quotation.quotation_id||quotation.id}</div>
-          ${txn.stage_name ? `<div style="font-size:12px;color:#E8471C;margin-top:2px;font-weight:700;">Stage: ${txn.stage_name}</div>` : ''}
-        </div>
-      </div>
-      <div class="amount-box">
-        <div class="amount-label">AMOUNT RECEIVED</div>
-        <div class="amount-value">₹${paidAmt.toLocaleString('en-IN')}</div>
-      </div>
-      <table class="details-table">
-        <thead><tr><th>PARTICULARS</th><th>DETAILS</th></tr></thead>
-        <tbody>
-          <tr><td class="label">Payment Mode</td><td><strong>${txn.payment_type||'Cash'}</strong></td></tr>
-          ${txn.payment_details ? `<tr><td class="label">Reference No.</td><td>${txn.payment_details}</td></tr>` : ''}
-          ${txn.received_by ? `<tr><td class="label">Received By</td><td>${txn.received_by}</td></tr>` : ''}
-          ${txn.remarks ? `<tr><td class="label">Remarks</td><td>${txn.remarks}</td></tr>` : ''}
-          <tr><td class="label">Grand Total</td><td>₹${grandTotal.toLocaleString('en-IN')}</td></tr>
-        </tbody>
-      </table>
-      <div class="divider"></div>
-      <div class="footer">
-        <div class="sig-block">
-          <div class="sig-line"></div>
-          <div class="sig-name">${quotation.site_manager_name||'Site Manager'}</div>
-          <div class="sig-role">Authorized Signatory</div>
-        </div>
-        <div class="stamp">PAYMENT<br/>RECEIVED<br/>✓</div>
-        <div class="sig-block">
-          <div class="sig-line"></div>
-          <div class="sig-name">${quotation.customer_name||'Customer'}</div>
-          <div class="sig-role">Customer Signature</div>
-        </div>
-      </div>
+
+    <div class="r-meta-row">
+      <span>Date <span class="r-meta-val">${fmtDate(txn.paid_date)}</span></span>
+      <span style="margin-left:36px;">No. <span class="r-meta-val">${rNo}</span></span>
+      <span style="margin-left:36px;">Payment <span class="r-meta-val">#${txnIndex+1} of ${sorted.length}</span></span>
+    </div>
+
+    <div class="r-row">
+      <span class="r-field">Received From <span class="r-field-line">${quotation.customer_name||''}</span></span>
+      <span class="r-field" style="margin-left:28px;">Purpose of Payment <span class="r-field-line">${txn.stage_name||'Interior Work'}</span></span>
+    </div>
+    <div class="r-divider"></div>
+
+    <div class="r-row">
+      <span class="r-field">Amount: <strong>${fmtAmt(amt)} /-</strong></span>
+      <span class="r-field" style="margin-left:20px;">In Words: <em>${inWords(amt)}</em></span>
+    </div>
+    <div class="r-divider"></div>
+
+    <div class="r-row">
+      <span class="r-label">Paid By:</span>
+      ${modeChecks}
+    </div>
+    <div class="r-divider"></div>
+
+    <div class="r-row">
+      <span class="r-label">Received By:</span>
+      <span class="r-recvby">${txn.received_by||'___________________'} &nbsp;|&nbsp; ${quotation.location||quotation.site_name||'___________________'} &nbsp;|&nbsp; ${quotation.mobile||'___________'}</span>
+    </div>
+    ${txn.remarks ? `<div class="r-divider"></div><div class="r-row"><span class="r-label">Remarks:</span> <span style="font-size:11px;color:#444;">${txn.remarks}</span></div>` : ''}
+
+    <div class="r-divider"></div>
+    <div class="r-total-bar">
+      <span>Total Amount: <strong>${fmtAmt(grandTotal)}</strong></span>
+      <span>Paid So Far: <strong>${fmtAmt(paidUpTo)}</strong></span>
+      <span>Balance: <strong>${fmtAmt(balance)}</strong></span>
     </div>
   </div>
-  <script>window.onload=()=>window.print();</script>
-  </body></html>`;
+
+  <!-- Previous payments table below receipt -->
+  <div class="prev-section">
+    <div class="prev-title">
+      Payment History
+      <span>${prevTxns.length} record${prevTxns.length!==1?'s':''} total</span>
+    </div>
+    <table class="prev-tbl">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Receipt No</th>
+          <th>Stage</th>
+          <th>Date</th>
+          <th>Mode</th>
+          <th>Reference</th>
+          <th>Amount</th>
+          <th>Running Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${prevRows}
+      </tbody>
+    </table>
+  </div>
+
+  <script>window.onload = () => window.print();</script>
+</body>
+</html>`;
 
   const w = window.open('', '_blank');
   if (w) { w.document.write(html); w.document.close(); }
@@ -841,7 +956,7 @@ function PaymentTransactionsModal({ quotation, onClose, onPaymentSaved }) {
                         ) : <span style={{color:'#CCC',fontSize:11}}>—</span>}
                       </td>
                       <td style={{padding:'8px 6px',whiteSpace:'nowrap',textAlign:'right'}}>
-                        <button onClick={()=>generateReceipt(txn,quotation)} title="Print Receipt"
+                        <button onClick={()=>generateReceipt(txn,quotation,transactions)} title="Print Receipt"
                           style={{background:'#FFF8F6',border:'none',borderRadius:6,padding:'5px 8px',cursor:'pointer',color:C.brand,fontSize:12,marginRight:3}}>🧾</button>
                         <button onClick={()=>handleEdit(txn)}
                           style={{background:'#EFF6FF',border:'none',borderRadius:6,padding:'5px 8px',cursor:'pointer',color:'#1D4ED8',fontSize:12,marginRight:3}}>✏️</button>
@@ -878,6 +993,23 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
   const bodyRef    = useRef();
   const [activeTab, setActiveTab] = useState('quotation');
   const [viewingPdf, setViewingPdf] = useState(null);
+  const [blobUrl,    setBlobUrl]    = useState(null);
+
+  // Convert base64 → Blob URL whenever viewingPdf changes (browsers block data: URIs in iframes)
+  useEffect(() => {
+    if (blobUrl) { URL.revokeObjectURL(blobUrl); setBlobUrl(null); }
+    if (!viewingPdf?.base64) return;
+    try {
+      const b64 = viewingPdf.base64.includes(',') ? viewingPdf.base64.split(',')[1] : viewingPdf.base64;
+      const mime = viewingPdf.base64.includes('data:') ? viewingPdf.base64.split(';')[0].split(':')[1] : 'application/pdf';
+      const bytes = atob(b64);
+      const arr   = new Uint8Array(bytes.length);
+      for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+      const blob  = new Blob([arr], { type: mime });
+      setBlobUrl(URL.createObjectURL(blob));
+    } catch(e) { console.error('Blob conversion failed:', e); }
+    return () => { if (blobUrl) URL.revokeObjectURL(blobUrl); };
+  }, [viewingPdf]);
   const [scale, setScale] = useState(1);
 
   useEffect(() => {
@@ -913,6 +1045,34 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
     : (typeof data.tc_items === 'string' && data.tc_items ? JSON.parse(data.tc_items) : DEFAULT_TC);
   const payStages   = normalisePayStages(data.pay_stages);
 
+  // Fetch real transactions for payment schedule
+  const [viewTransactions, setViewTransactions] = useState([]);
+  useEffect(() => {
+    if (!data.id) return;
+    api.get(`/quotations/${data.id}/transactions`)
+      .then(r => setViewTransactions(r.data.data || []))
+      .catch(() => {});
+  }, [data.id]);
+
+  const viewTxnByStage = React.useMemo(() => {
+    const map = {};
+    viewTransactions.forEach(t => {
+      const key = (t.stage_name || '').trim().toLowerCase();
+      if (!map[key]) map[key] = { paid: 0, txns: [] };
+      map[key].paid += Number(t.paid_amount || 0);
+      map[key].txns.push(t);
+    });
+    return map;
+  }, [viewTransactions]);
+
+  const getViewStageTxn = (stageName) => {
+    const key = (stageName || '').trim().toLowerCase();
+    return viewTxnByStage[key] || { paid: 0, txns: [] };
+  };
+
+  const totalViewPaid = viewTransactions.reduce((s, t) => s + Number(t.paid_amount || 0), 0);
+  const totalScheduled = payStages.reduce((s, r) => s + (parseFloat(r.paymentAmount) || 0), 0);
+
   const roomEntries  = Object.entries(rooms);
   const roomPdfs     = roomEntries.filter(([,r])=>r&&r.pdfBase64&&r.pdfName).map(([k,r])=>({key:k,name:r.pdfName,base64:r.pdfBase64,category:'Room',categoryLabel:r.label||k}));
 
@@ -931,7 +1091,7 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
     try { const blob=await pdf(<QuotationPDF data={data}/>).toBlob(); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`Deeraj_Quotation_${data.customer_name.replace(/\s+/g,'_')}_${data.id}.pdf`; a.click(); URL.revokeObjectURL(url); toast.success('Downloaded!',{id:'pdf'}); }
     catch { toast.error('Failed',{id:'pdf'}); }
   };
-  const handlePrint = () => { printQuotation(data); };
+  const handlePrint = () => { printQuotation(data, viewTransactions); };
 
   const C = { gold:'#E8471C', dark:'#1A1A1A', gray:'#555', lightGray:'#F5F5F5', border:'#E0E0E0', white:'#fff', rowAlt:'#FAFAFA', sectionBg:'#FFF0EC' };
   const thBase = { padding:'5px 8px', textAlign:'left', color:C.white, fontSize:10, fontWeight:700, letterSpacing:0.4, border:'1px solid #111', background:C.dark };
@@ -1114,18 +1274,79 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
               <div style={{background:C.white,width:'100%',minHeight:1123,boxShadow:'0 2px 20px rgba(0,0,0,.15)',border:'1px solid #E8E8E8'}}>
                 <div style={{padding:'16px 32px',display:'flex',justifyContent:'space-between',alignItems:'center',borderBottom:`1px solid ${C.border}`}}><img src={LOGO_URL} alt="" style={{height:52,width:'auto'}}/><div style={{textAlign:'right'}}><div style={{fontSize:9,color:'#AAA'}}>Date: {invoiceDate}</div></div></div>
                 <div style={{height:3,background:C.gold}}/>
-                <div style={{padding:'24px 32px'}}>
-                  <div style={{textAlign:'center',fontSize:13,fontWeight:800,letterSpacing:1,textTransform:'uppercase',marginBottom:14}}>STAGE WISE PAYMENT SCHEDULE</div>
+                <div style={{padding:'24px 32px'}}>                  <div style={{textAlign:'center',fontSize:13,fontWeight:800,letterSpacing:1,textTransform:'uppercase',marginBottom:10}}>STAGE WISE PAYMENT SCHEDULE</div>
+                  {/* Summary row */}
+                  <div style={{display:'flex',gap:12,marginBottom:14,justifyContent:'center'}}>
+                    <div style={{background:'#EFF6FF',border:'1.5px solid #BFDBFE',borderRadius:6,padding:'6px 16px',textAlign:'center'}}>
+                      <div style={{fontSize:8,color:'#1D4ED8',fontWeight:700,letterSpacing:0.5}}>TOTAL SCHEDULED</div>
+                      <div style={{fontSize:13,fontWeight:700,color:'#1D4ED8'}}>₹{totalScheduled.toLocaleString('en-IN')}</div>
+                    </div>
+                    <div style={{background:'#F0FDF4',border:'1.5px solid #BBF7D0',borderRadius:6,padding:'6px 16px',textAlign:'center'}}>
+                      <div style={{fontSize:8,color:'#15803D',fontWeight:700,letterSpacing:0.5}}>TOTAL RECEIVED</div>
+                      <div style={{fontSize:13,fontWeight:700,color:'#15803D'}}>₹{totalViewPaid.toLocaleString('en-IN')}</div>
+                    </div>
+                    <div style={{background:totalScheduled-totalViewPaid>0?'#FFF5F5':'#F0FDF4',border:`1.5px solid ${totalScheduled-totalViewPaid>0?'#FECACA':'#BBF7D0'}`,borderRadius:6,padding:'6px 16px',textAlign:'center'}}>
+                      <div style={{fontSize:8,fontWeight:700,letterSpacing:0.5,color:totalScheduled-totalViewPaid>0?'#DC2626':'#15803D'}}>BALANCE</div>
+                      <div style={{fontSize:13,fontWeight:700,color:totalScheduled-totalViewPaid>0?'#DC2626':'#15803D'}}>₹{(totalScheduled-totalViewPaid).toLocaleString('en-IN')}</div>
+                    </div>
+                  </div>
                   <div style={{overflowX:'auto'}}>
                     <table style={{width:'100%',minWidth:600,borderCollapse:'collapse',fontSize:9}}>
-                      <thead><tr>{['Payment Stages','Payment Amt','Payment Date','Paid Amt','Paid Date','Payment Type','Payment Details','Received By'].map(h=>(<th key={h} style={{...thBase,fontSize:8,padding:'6px 7px'}}>{h}</th>))}</tr></thead>
-                      <tbody>{payStages.map((row,i)=>(
-                        <tr key={i} style={{background:i%2===1?C.rowAlt:C.white}}>
-                          <td style={{padding:'9px 7px',border:`1px solid ${C.border}`,fontWeight:600,fontSize:9}}>{row.stage||''}</td>
-                          <td style={{padding:'9px 7px',border:`1px solid ${C.border}`,fontSize:9,fontWeight:row.amount?700:400,color:row.amount?C.gold:'inherit'}}>{row.amount?`₹${Number(row.amount).toLocaleString('en-IN')}`:''}</td>
-                          {[...Array(6)].map((_,j)=><td key={j} style={{padding:'9px 7px',border:`1px solid ${C.border}`,height:28}}/>)}
+                      <thead>
+                        <tr>
+                          {['Payment Stage','Scheduled (₹)','Due Date','✓ Actual Paid (₹)','Paid Date','Mode','Ref / Details','Received By'].map((h,hi)=>(
+                            <th key={h} style={{...thBase,fontSize:8,padding:'6px 7px',color:hi>=3&&hi<=7?'#86EFAC':'#fff'}}>{h}</th>
+                          ))}
                         </tr>
-                      ))}</tbody>
+                      </thead>
+                      <tbody>{payStages.map((row,i)=>{
+                        const stxn = getViewStageTxn(row.stage);
+                        const totalPaid = stxn.paid;
+                        const scheduled = parseFloat(row.paymentAmount)||0;
+                        const latestTxn = stxn.txns[stxn.txns.length-1]||null;
+                        const isPaid = totalPaid>=scheduled&&scheduled>0;
+                        const isPartial = totalPaid>0&&totalPaid<scheduled;
+                        const rowBg = isPaid?'#F0FDF4':isPartial?'#FFFBEB':i%2===1?C.rowAlt:C.white;
+                        return (
+                          <tr key={i} style={{background:rowBg}}>
+                            <td style={{padding:'9px 7px',border:`1px solid ${C.border}`,fontWeight:700,fontSize:9}}>
+                              {row.stage||''}{isPaid&&<span style={{color:'#15803D',marginLeft:4}}>✓</span>}
+                            </td>
+                            <td style={{padding:'9px 7px',border:`1px solid ${C.border}`,fontSize:9,fontWeight:scheduled?700:400,color:scheduled?'#1D4ED8':'#999',textAlign:'right'}}>
+                              {scheduled?`₹${scheduled.toLocaleString('en-IN')}`:'-'}
+                            </td>
+                            <td style={{padding:'9px 7px',border:`1px solid ${C.border}`,fontSize:9,color:'#555'}}>
+                              {row.paymentDate?new Date(row.paymentDate).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'-'}
+                            </td>
+                            <td style={{padding:'9px 7px',border:`1px solid ${C.border}`,fontSize:9,fontWeight:700,color:totalPaid>0?'#15803D':'#CCC',textAlign:'right'}}>
+                              {totalPaid>0?`₹${totalPaid.toLocaleString('en-IN')}`:'-'}
+                            </td>
+                            <td style={{padding:'9px 7px',border:`1px solid ${C.border}`,fontSize:9,color:'#555'}}>
+                              {latestTxn?.paid_date?new Date(latestTxn.paid_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'}):'-'}
+                            </td>
+                            <td style={{padding:'9px 7px',border:`1px solid ${C.border}`,fontSize:9}}>
+                              {latestTxn?.payment_type?<span style={{background:'#EFF6FF',color:'#1D4ED8',borderRadius:10,padding:'1px 6px',fontSize:8,fontWeight:600}}>{latestTxn.payment_type}</span>:'-'}
+                            </td>
+                            <td style={{padding:'9px 7px',border:`1px solid ${C.border}`,fontSize:9,color:'#555',maxWidth:90,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={latestTxn?.payment_details}>
+                              {latestTxn?.payment_details||'-'}
+                            </td>
+                            <td style={{padding:'9px 7px',border:`1px solid ${C.border}`,fontSize:9,color:'#555'}}>
+                              {latestTxn?.received_by||'-'}
+                            </td>
+                          </tr>
+                        );
+                      })}</tbody>
+                      <tfoot>
+                        <tr style={{background:'#F0FDF4',fontWeight:700}}>
+                          <td style={{padding:'8px 7px',border:`1px solid ${C.border}`,fontSize:9,fontWeight:700}} colSpan={1}>TOTAL</td>
+                          <td style={{padding:'8px 7px',border:`1px solid ${C.border}`,fontSize:9,fontWeight:700,color:'#1D4ED8',textAlign:'right'}}>₹{totalScheduled.toLocaleString('en-IN')}</td>
+                          <td style={{padding:'8px 7px',border:`1px solid ${C.border}`}}/>
+                          <td style={{padding:'8px 7px',border:`1px solid ${C.border}`,fontSize:9,fontWeight:700,color:'#15803D',textAlign:'right'}}>₹{totalViewPaid.toLocaleString('en-IN')}</td>
+                          <td colSpan={4} style={{padding:'8px 7px',border:`1px solid ${C.border}`,fontSize:9,color:totalScheduled-totalViewPaid>0?'#DC2626':'#15803D',fontWeight:700}}>
+                            Balance: ₹{(totalScheduled-totalViewPaid).toLocaleString('en-IN')}
+                          </td>
+                        </tr>
+                      </tfoot>
                     </table>
                   </div>
                 </div>
@@ -1163,12 +1384,26 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
               ) : viewingPdf ? (
                 <div className="pdf-fullview">
                   <div className="pdf-fullview-header">
-                    <button className="pdf-back-btn" onClick={()=>setViewingPdf(null)}>← Back</button>
+                    <button className="pdf-back-btn" onClick={()=>{setViewingPdf(null);if(blobUrl)URL.revokeObjectURL(blobUrl);setBlobUrl(null);}}>← Back</button>
                     <span className="pdf-fullview-name">{viewingPdf.category==='Plans'?'🗺️':'📄'} {viewingPdf.name}</span>
                     <span style={{fontSize:11,color:'#888',marginLeft:8}}>{viewingPdf.categoryLabel}</span>
-                    <a className="pdf-download-btn" href={'data:application/pdf;base64,'+viewingPdf.base64} download={viewingPdf.name}>⬇ Download</a>
+                    <a className="pdf-download-btn" href={viewingPdf.base64} download={viewingPdf.name}>⬇ Download</a>
+                    {blobUrl && <button className="pdf-download-btn" style={{marginLeft:6,background:'#1D4ED8',color:'#fff',border:'none',cursor:'pointer'}} onClick={()=>window.open(blobUrl,'_blank')}>↗ Open in Tab</button>}
                   </div>
-                  <iframe src={'data:application/pdf;base64,'+viewingPdf.base64} title={viewingPdf.name} className="pdf-iframe"/>
+                  {blobUrl ? (
+                    viewingPdf.base64 && (viewingPdf.base64.includes('image/') || /\.(png|jpg|jpeg|gif|webp)$/i.test(viewingPdf.name||'')) ? (
+                      <div style={{flex:1,overflow:'auto',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'20px',background:'#F5F5F5'}}>
+                        <img src={blobUrl} alt={viewingPdf.name} style={{maxWidth:'100%',borderRadius:8,boxShadow:'0 4px 20px rgba(0,0,0,0.15)'}} />
+                      </div>
+                    ) : (
+                      <iframe src={blobUrl} title={viewingPdf.name} className="pdf-iframe" style={{flex:1,width:'100%',border:'none',minHeight:600}}/>
+                    )
+                  ) : (
+                    <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:16,color:'#888',background:'#F8F8F8'}}>
+                      <div style={{fontSize:40}}>⏳</div>
+                      <div style={{fontSize:14,fontWeight:600}}>Loading document…</div>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="pdf-list">
@@ -1188,7 +1423,7 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
                               <div className="pdf-list-name">{p.name}</div>
                               <div className="pdf-list-room">{p.categoryLabel}</div>
                             </div>
-                            <a className="pdf-open-btn" href={'data:application/pdf;base64,'+p.base64} download={p.name} onClick={e=>e.stopPropagation()}>⬇</a>
+                            <a className="pdf-open-btn" href={p.base64} download={p.name} onClick={e=>e.stopPropagation()}>⬇</a>
                             <button className="pdf-open-btn" style={{marginLeft:4}}>Open →</button>
                           </div>
                         ))}
@@ -1447,10 +1682,10 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
               </h2>
             </div>
             <div className="project-type-grid">
-              {['2BHK','4BHK','Villa','Commercial Project','Others'].map(type => (
+              {['2BHK','3BHK','4BHK','Villa','Commercial Project','Others'].map(type => (
                 <label key={type} className={`project-type-card ${projectType===type?'selected':''}`}>
                   <input type="radio" name="editProjectType" value={type} checked={projectType===type} onChange={()=>setProjectType(type)} />
-                  <span className="project-type-icon">{type==='2BHK'?'🏠':type==='4BHK'?'🏡':type==='Villa'?'🏰':type==='Commercial Project'?'🏢':'📋'}</span>
+                  <span className="project-type-icon">{type==='2BHK'?'🏠':type==='3BHK'?'🏠':type==='4BHK'?'🏡':type==='Villa'?'🏰':type==='Commercial Project'?'🏢':'📋'}</span>
                   <span className="project-type-label">{type}</span>
                 </label>
               ))}
@@ -1528,7 +1763,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                 <label className="field-label">Branch</label>
                 <select className="field-input field-select" value={smBranch} onChange={e=>setSmBranch(e.target.value)}>
                   <option value="">— Select Branch —</option>
-                  {['Kokapet','Kompalli','Medchal','Bheemavaram'].map(b=><option key={b} value={b}>{b}</option>)}
+                  {['Kompally','Medchal','Gachibowli','Bheemavaram'].map(b=><option key={b} value={b}>{b}</option>)}
                 </select>
               </div>
             </div>
@@ -1636,7 +1871,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                               <>
                                 {room.pdfBase64&&!room.pdfFile&&(
                                   <button type="button" className="btn-upload-pdf has-file" style={{fontSize:11,padding:'4px 8px'}}
-                                    onClick={()=>{const a=document.createElement('a');a.href='data:application/pdf;base64,'+room.pdfBase64;a.download=room.pdfName||'attachment.pdf';a.click();}}>
+                                    onClick={()=>{const a=document.createElement('a');a.href=(room.pdfBase64.startsWith('data:')?room.pdfBase64:'data:application/pdf;base64,'+room.pdfBase64);a.download=room.pdfName||'attachment.pdf';a.click();}}>
                                     ↓ View
                                   </button>
                                 )}
@@ -1883,6 +2118,12 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   const [editing,    setEditing]    = useState(null);
   const [paymentQ,   setPaymentQ]   = useState(null);  // quotation for payment modal
   const [search,     setSearch]     = useState('');
+  const [filterBranch,  setFilterBranch]  = useState('All');
+  const [filterManager, setFilterManager] = useState('All');
+  const [filterFrom,    setFilterFrom]    = useState('');
+  const [filterTo,      setFilterTo]      = useState('');
+  const [filterBudgetMin, setFilterBudgetMin] = useState('');
+  const [filterBudgetMax, setFilterBudgetMax] = useState('');
 
   const fetchAll = async () => {
     try { const res=await api.get(`/quotations`); setQuotations(res.data.data||[]); } catch { toast.error('Failed to fetch'); }
@@ -1926,26 +2167,57 @@ export default function QuotationList({ user = { role: 'admin' } }) {
     toast.loading('Generating…',{id:'dl'});
     try { const blob=await pdf(<QuotationPDF data={d}/>).toBlob(); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`Deeraj_Quotation_${d.customer_name.replace(/\s+/g,'_')}_${id}.pdf`; a.click(); URL.revokeObjectURL(url); toast.success('Downloaded!',{id:'dl'}); } catch { toast.error('Failed',{id:'dl'}); }
   };
-  const handlePrint    = async (id) => { try { const res=await api.get(`/quotations/${id}`); printQuotation(res.data.data); } catch { toast.error('Failed to load'); } };
+  const handlePrint    = async (id) => { try { const res=await api.get(`/quotations/${id}`); const txRes=await api.get(`/quotations/${id}/transactions`); printQuotation(res.data.data, txRes.data.data||[]); } catch { toast.error('Failed to load'); } };
 
-  const filtered = quotations.filter(q=> {
+  // Derive unique branches and managers for filter dropdowns
+  const allBranches  = [...new Set(quotations.map(q=>q.site_manager_branch||'').filter(Boolean))].sort();
+  const allManagers  = [...new Set(quotations.map(q=>q.site_manager_name||'').filter(Boolean))].sort();
+
+  const filtered = [...quotations].sort((a,b) => {
+    // Booked first, then Unbooked
+    const aBooked = (a.project_status||'Unbooked') === 'Booked' ? 0 : 1;
+    const bBooked = (b.project_status||'Unbooked') === 'Booked' ? 0 : 1;
+    if (aBooked !== bBooked) return aBooked - bBooked;
+    // Within same status, newest first
+    return new Date(b.created_at||0) - new Date(a.created_at||0);
+  }).filter(q=> {
     const matchSearch =
       q.customer_name.toLowerCase().includes(search.toLowerCase())||
       (q.location||'').toLowerCase().includes(search.toLowerCase())||
       (q.mobile||'').includes(search);
-    const matchStatus = statusFilter === 'All' || (q.project_status||'Unbooked') === statusFilter;
-    return matchSearch && matchStatus;
+    const matchStatus  = statusFilter === 'All' || (q.project_status||'Unbooked') === statusFilter;
+    const matchBranch  = filterBranch  === 'All' || (q.site_manager_branch||'') === filterBranch;
+    const matchManager = filterManager === 'All' || (q.site_manager_name||'')   === filterManager;
+    const createdDate  = new Date(q.created_at);
+    const matchFrom    = !filterFrom   || createdDate >= new Date(filterFrom);
+    const matchTo      = !filterTo     || createdDate <= new Date(filterTo + 'T23:59:59');
+    const gt           = Number(q.grand_total||0);
+    const matchBudgMin = !filterBudgetMin || gt >= Number(filterBudgetMin);
+    const matchBudgMax = !filterBudgetMax || gt <= Number(filterBudgetMax);
+    return matchSearch && matchStatus && matchBranch && matchManager && matchFrom && matchTo && matchBudgMin && matchBudgMax;
   });
 
-  // For managers: only count their own quotations in summary cards
-  const myQuotations = isManager
-    ? quotations.filter(q => (q.site_manager_name||'').toLowerCase().trim() === (user.display||'').toLowerCase().trim())
-    : quotations;
+  // Cards always computed from filtered (so filters affect cards too)
+  const cardBase = isManager
+    ? filtered.filter(q => (q.site_manager_name||'').toLowerCase().trim() === (user.display||'').toLowerCase().trim())
+    : filtered;
 
-  const totalGrand   = myQuotations.reduce((s,q) => s + Number(q.grand_total||0), 0);
-  const totalPaid    = myQuotations.reduce((s,q) => s + Number(q.paid_total||0), 0);
-  const totalBalance = totalGrand - totalPaid;
-  const bookedCount  = myQuotations.filter(q=>(q.project_status||'Unbooked')==='Booked').length;
+  const bookedQ      = cardBase.filter(q=>(q.project_status||'Unbooked')==='Booked');
+  const unbookedQ    = cardBase.filter(q=>(q.project_status||'Unbooked')==='Unbooked');
+  const bookedCount  = bookedQ.length;
+  const unbookedCount= unbookedQ.length;
+
+  const totalGrand         = cardBase.reduce((s,q)=>s+Number(q.grand_total||0),0);
+  const totalPaid          = cardBase.reduce((s,q)=>s+Number(q.paid_total||0),0);
+  const totalBalance       = totalGrand - totalPaid;
+
+  const totalBookedAmt     = bookedQ.reduce((s,q)=>s+Number(q.grand_total||0),0);
+  const totalUnbookedAmt   = unbookedQ.reduce((s,q)=>s+Number(q.grand_total||0),0);
+  const totalBookedPaid    = bookedQ.reduce((s,q)=>s+Number(q.paid_total||0),0);
+  const totalBookedBalance = totalBookedAmt - totalBookedPaid;
+
+  const hasFilters = filterBranch!=='All'||filterManager!=='All'||filterFrom||filterTo||filterBudgetMin||filterBudgetMax;
+  const clearFilters = () => { setFilterBranch('All');setFilterManager('All');setFilterFrom('');setFilterTo('');setFilterBudgetMin('');setFilterBudgetMax(''); };
 
   return (
     <div className="list-page fade-up">
@@ -1962,7 +2234,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
         </div>
       )}
       <div className="list-header">
-        <div><h1 className="page-title">Dashboard</h1><p className="page-subtitle">{quotations.length} total records</p></div>
+        <div><h1 className="page-title">Dashboard</h1><p className="page-subtitle">{hasFilters ? `${filtered.length} of ${quotations.length} records` : `${quotations.length} total records`}</p></div>
         <div style={{display:'flex',alignItems:'center',gap:'14px',flexWrap:'wrap'}}>
           <div className="list-search-wrap">
             <svg className="search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="6" cy="6" r="4" stroke="#888" strokeWidth="1.3"/><path d="M9.5 9.5L12 12" stroke="#888" strokeWidth="1.3" strokeLinecap="round"/></svg>
@@ -1980,41 +2252,96 @@ export default function QuotationList({ user = { role: 'admin' } }) {
         </div>
       </div>
 
-      {/* ── Summary Cards ── */}
-      <div className="dash-cards">
-        <div className="dash-card">
-          <div className="dash-card-icon" style={{background:'#FFF0EC'}}>📋</div>
-          <div className="dash-card-body">
-            <div className="dash-card-label">{isManager ? 'My Quotations' : 'Total Quotations'}</div>
-            <div className="dash-card-value" style={{color:'#E8471C'}}>{isManager ? myQuotations.length : quotations.length}</div>
+      {/* ── Summary Cards — 5 per row ── */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:14,marginBottom:18}}>
+
+        {/* ── Row 1: Counts ── */}
+        {[
+          { icon:'📋', bg:'#FFF0EC', label: isManager?'My Quotations':'Total Quotations', value: cardBase.length,  color:'#E8471C', sub: hasFilters?`of ${quotations.length} total`:null },
+          { icon:'✅', bg:'#EFF6FF', label:'Booked Projects',   value: bookedCount,    color:'#1D4ED8' },
+          { icon:'🔘', bg:'#FFF5F5', label:'Unbooked Projects', value: unbookedCount,  color:'#EF4444' },
+          { icon:'💰', bg:'#F0FDF4', label:'Total Amount',      value: fmtAmt(totalGrand),   color:'#10B981', isMoney:true },
+          { icon:'💳', bg:'#FEF9C3', label:'Total Paid',        value: fmtAmt(totalPaid),    color:'#CA8A04', isMoney:true },
+        ].map((c,i)=>(
+          <div key={i} style={{background:'#fff',borderRadius:14,padding:'18px 20px',boxShadow:'0 2px 12px rgba(0,0,0,0.07)',border:'1.5px solid #F0F0F0',display:'flex',alignItems:'center',gap:14,minHeight:90}}>
+            <div style={{width:52,height:52,borderRadius:12,background:c.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>{c.icon}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:12,color:'#888',fontWeight:600,marginBottom:4,fontFamily:"'DM Sans',sans-serif"}}>{c.label}</div>
+              <div style={{fontSize:c.isMoney?18:26,fontWeight:800,color:c.color,fontFamily:"'DM Sans',sans-serif",lineHeight:1,wordBreak:'break-all'}}>{c.value}</div>
+              {c.sub&&<div style={{fontSize:10,color:'#AAA',marginTop:3}}>{c.sub}</div>}
+            </div>
           </div>
-        </div>
-        <div className="dash-card">
-          <div className="dash-card-icon" style={{background:'#EFF6FF'}}>✅</div>
-          <div className="dash-card-body">
-            <div className="dash-card-label">Booked Projects</div>
-            <div className="dash-card-value" style={{color:'#1D4ED8'}}>{bookedCount}</div>
+        ))}
+
+        {/* ── Row 2: Amounts + Booked Breakdown ── */}
+        {[
+          { icon:'⏳', bg:'#FFF5F5', label:'Total Balance',     value: fmtAmt(totalBalance),       color:'#EF4444', isMoney:true },
+          { icon:'🏠', bg:'#EFF6FF', label:'Booked Amount',     value: fmtAmt(totalBookedAmt),     color:'#1D4ED8', isMoney:true },
+          { icon:'📦', bg:'#FFF8F0', label:'Unbooked Amount',   value: fmtAmt(totalUnbookedAmt),   color:'#F97316', isMoney:true },
+          { icon:'✅', bg:'#F0FDF4', label:'Booked Paid',       value: fmtAmt(totalBookedPaid),    color:'#10B981', isMoney:true },
+          { icon:'🔴', bg:'#FFF0F0', label:'Booked Balance',    value: fmtAmt(totalBookedBalance), color:'#EF4444', isMoney:true },
+        ].map((c,i)=>(
+          <div key={i} style={{background:'#fff',borderRadius:14,padding:'18px 20px',boxShadow:'0 2px 12px rgba(0,0,0,0.07)',border:'1.5px solid #F0F0F0',display:'flex',alignItems:'center',gap:14,minHeight:90}}>
+            <div style={{width:52,height:52,borderRadius:12,background:c.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>{c.icon}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:12,color:'#888',fontWeight:600,marginBottom:4,fontFamily:"'DM Sans',sans-serif"}}>{c.label}</div>
+              <div style={{fontSize:18,fontWeight:800,color:c.color,fontFamily:"'DM Sans',sans-serif",lineHeight:1,wordBreak:'break-all'}}>{c.value}</div>
+            </div>
           </div>
-        </div>
-        <div className="dash-card">
-          <div className="dash-card-icon" style={{background:'#F0FDF4'}}>💰</div>
-          <div className="dash-card-body">
-            <div className="dash-card-label">Total Amount</div>
-            <div className="dash-card-value" style={{color:'#10B981'}} title={'₹'+totalGrand.toLocaleString('en-IN')}>{fmtAmt(totalGrand)}</div>
+        ))}
+      </div>
+
+      {/* ── Filters ── */}
+      <div style={{background:'#F8F9FB',border:'1.5px solid #E5E5E5',borderRadius:12,padding:'14px 18px',marginBottom:14,fontFamily:"'DM Sans',sans-serif"}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+          <div style={{fontWeight:700,fontSize:13,color:'#1A1A1A',display:'flex',alignItems:'center',gap:6}}>
+            🔍 Filters
+            {hasFilters&&<span style={{background:'#E8471C',color:'#fff',fontSize:10,fontWeight:700,padding:'1px 7px',borderRadius:20}}>{[filterBranch!=='All',filterManager!=='All',!!filterFrom,!!filterTo,!!filterBudgetMin,!!filterBudgetMax].filter(Boolean).length} active</span>}
           </div>
+          {hasFilters&&<button onClick={clearFilters} style={{background:'none',border:'1.5px solid #E8471C',borderRadius:6,padding:'3px 10px',fontSize:11,color:'#E8471C',fontWeight:700,cursor:'pointer'}}>✕ Clear All</button>}
         </div>
-        <div className="dash-card">
-          <div className="dash-card-icon" style={{background:'#FEF9C3'}}>💳</div>
-          <div className="dash-card-body">
-            <div className="dash-card-label">Total Paid</div>
-            <div className="dash-card-value" style={{color:'#CA8A04'}} title={'₹'+totalPaid.toLocaleString('en-IN')}>{fmtAmt(totalPaid)}</div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(160px,1fr))',gap:10}}>
+          {/* Branch */}
+          <div>
+            <label style={{fontSize:10,fontWeight:700,color:'#888',display:'block',marginBottom:3,letterSpacing:0.5}}>BRANCH</label>
+            <select value={filterBranch} onChange={e=>setFilterBranch(e.target.value)}
+              style={{width:'100%',border:'1.5px solid #E0E0E0',borderRadius:7,padding:'7px 10px',fontSize:12,fontFamily:"'DM Sans',sans-serif",background:'#fff',color:'#1A1A1A',outline:'none'}}>
+              <option value="All">All Branches</option>
+              {allBranches.map(b=><option key={b} value={b}>{b}</option>)}
+            </select>
           </div>
-        </div>
-        <div className="dash-card">
-          <div className="dash-card-icon" style={{background:'#FFF5F5'}}>⏳</div>
-          <div className="dash-card-body">
-            <div className="dash-card-label">Balance</div>
-            <div className="dash-card-value" style={{color:'#EF4444'}} title={'₹'+totalBalance.toLocaleString('en-IN')}>{fmtAmt(totalBalance)}</div>
+          {/* Manager */}
+          {isAdmin&&<div>
+            <label style={{fontSize:10,fontWeight:700,color:'#888',display:'block',marginBottom:3,letterSpacing:0.5}}>MANAGER</label>
+            <select value={filterManager} onChange={e=>setFilterManager(e.target.value)}
+              style={{width:'100%',border:'1.5px solid #E0E0E0',borderRadius:7,padding:'7px 10px',fontSize:12,fontFamily:"'DM Sans',sans-serif",background:'#fff',color:'#1A1A1A',outline:'none'}}>
+              <option value="All">All Managers</option>
+              {allManagers.map(m=><option key={m} value={m}>{m}</option>)}
+            </select>
+          </div>}
+          {/* From Date */}
+          <div>
+            <label style={{fontSize:10,fontWeight:700,color:'#888',display:'block',marginBottom:3,letterSpacing:0.5}}>FROM DATE</label>
+            <input type="date" value={filterFrom} onChange={e=>setFilterFrom(e.target.value)}
+              style={{width:'100%',border:'1.5px solid #E0E0E0',borderRadius:7,padding:'7px 10px',fontSize:12,fontFamily:"'DM Sans',sans-serif",background:'#fff',color:'#1A1A1A',outline:'none'}}/>
+          </div>
+          {/* To Date */}
+          <div>
+            <label style={{fontSize:10,fontWeight:700,color:'#888',display:'block',marginBottom:3,letterSpacing:0.5}}>TO DATE</label>
+            <input type="date" value={filterTo} onChange={e=>setFilterTo(e.target.value)}
+              style={{width:'100%',border:'1.5px solid #E0E0E0',borderRadius:7,padding:'7px 10px',fontSize:12,fontFamily:"'DM Sans',sans-serif",background:'#fff',color:'#1A1A1A',outline:'none'}}/>
+          </div>
+          {/* Budget Min */}
+          <div>
+            <label style={{fontSize:10,fontWeight:700,color:'#888',display:'block',marginBottom:3,letterSpacing:0.5}}>BUDGET MIN (₹)</label>
+            <input type="number" placeholder="0" value={filterBudgetMin} onChange={e=>setFilterBudgetMin(e.target.value)}
+              style={{width:'100%',border:'1.5px solid #E0E0E0',borderRadius:7,padding:'7px 10px',fontSize:12,fontFamily:"'DM Sans',sans-serif",background:'#fff',color:'#1A1A1A',outline:'none'}}/>
+          </div>
+          {/* Budget Max */}
+          <div>
+            <label style={{fontSize:10,fontWeight:700,color:'#888',display:'block',marginBottom:3,letterSpacing:0.5}}>BUDGET MAX (₹)</label>
+            <input type="number" placeholder="Any" value={filterBudgetMax} onChange={e=>setFilterBudgetMax(e.target.value)}
+              style={{width:'100%',border:'1.5px solid #E0E0E0',borderRadius:7,padding:'7px 10px',fontSize:12,fontFamily:"'DM Sans',sans-serif",background:'#fff',color:'#1A1A1A',outline:'none'}}/>
           </div>
         </div>
       </div>
@@ -2026,7 +2353,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
             onClick={()=>setStatusFilter(s)}>
             {s === 'All' ? '🗂 All' : s === 'Booked' ? '✅ Booked' : '🔘 Unbooked'}
             <span className="dash-filter-count">
-              {s==='All' ? quotations.length : quotations.filter(q=>(q.project_status||'Unbooked')===s).length}
+              {s==='All' ? filtered.length : filtered.filter(q=>(q.project_status||'Unbooked')===s).length}
             </span>
           </button>
         ))}
@@ -2039,8 +2366,8 @@ export default function QuotationList({ user = { role: 'admin' } }) {
       ) : (
         <div className="table-card">
           <table className="list-table">
-            <colgroup><col className="col-id"/><col className="col-name"/><col className="col-loc"/><col className="col-mobile"/>{isAdmin&&<col className="col-manager"/>}<col className="col-total"/><col className="col-paid"/><col className="col-balance"/><col className="col-status"/><col className="col-date"/><col className="col-actions"/></colgroup>
-            <thead><tr><th className="col-id">QID</th><th className="col-name">Customer</th><th className="col-loc">Location</th><th className="col-mobile">Mobile</th>{isAdmin&&<th className="col-manager">Manager</th>}<th className="col-total">Grand Total</th><th className="col-paid">Paid</th><th className="col-balance">Balance</th><th className="col-status">Status</th><th className="col-date">Date</th><th className="col-actions">Actions</th></tr></thead>
+            <colgroup><col className="col-id"/><col className="col-name"/><col className="col-loc"/><col className="col-mobile"/>{isAdmin&&<col className="col-manager"/>}{isAdmin&&<col style={{minWidth:90}}/>}<col className="col-total"/><col className="col-paid"/><col className="col-balance"/><col className="col-status"/><col className="col-date"/><col className="col-actions"/></colgroup>
+            <thead><tr><th className="col-id">QID</th><th className="col-name">Customer</th><th className="col-loc">Location</th><th className="col-mobile">Mobile</th>{isAdmin&&<th className="col-manager">Manager</th>}{isAdmin&&<th style={{fontSize:11,minWidth:90}}>Branch</th>}<th className="col-total">Grand Total</th><th className="col-paid">Paid</th><th className="col-balance">Balance</th><th className="col-status">Status</th><th className="col-date">Date</th><th className="col-actions">Actions</th></tr></thead>
             <tbody>
               {filtered.map((q,idx)=>(
                 <tr key={q.id} className="list-row" style={{animationDelay:`${idx*0.04}s`}}>
@@ -2049,6 +2376,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                   <td className="loc-cell col-loc"><span className="loc-text">{q.location||'—'}</span></td>
                   <td className="phone-cell col-mobile">{q.mobile}</td>
                   {isAdmin&&<td className="col-manager" style={{fontSize:12,color:'#555',fontWeight:600}}>{q.site_manager_name||'—'}</td>}
+                  {isAdmin&&<td style={{fontSize:11,color:'#1D4ED8',fontWeight:600,whiteSpace:'nowrap'}}>{q.site_manager_branch?<span style={{background:'#EFF6FF',padding:'2px 8px',borderRadius:12,fontSize:10}}>{q.site_manager_branch}</span>:'—'}</td>}
                   <td className="total-cell col-total">₹{Number(q.grand_total).toLocaleString('en-IN')}</td>
                   <td className="paid-cell col-paid" style={{color:'#10B981',fontWeight:700}}>
                     {Number(q.paid_total||0) > 0 ? '₹'+Number(q.paid_total).toLocaleString('en-IN') : '—'}
