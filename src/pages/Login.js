@@ -5,25 +5,14 @@ import api from '../utils/api';
 const LOGO_URL =
   'https://img1.wsimg.com/isteam/ip/e7e3142b-3f26-4173-bc29-b2315178edb8/DI%20logo%20(2).png/:/rs=w:559,h:192,cg:true,m/cr=w:559,h:192/qt=q:95';
 
-// Admins are always local (no backend needed)
+// Admins only — validated locally, never change
 const ADMIN_USERS = [
   { username: 'admin',  password: 'deeraj@2024',  display: 'Administrator', role: 'admin' },
   { username: 'deeraj', password: 'interiors123',  display: 'Deeraj',        role: 'admin' },
 ];
 
-// Fallback manager list if backend is unreachable
-const FALLBACK_MANAGERS = [
-  { username: 'manager', password: 'manager@123',  display: 'Site Manager',  role: 'manager' },
-  { username: 'chandu',  password: 'chandu@123',   display: 'Chandu',        role: 'manager' },
-  { username: 'sony',    password: 'sony@123',     display: 'Sony',          role: 'manager' },
-  { username: 'veera',   password: 'veera@123',    display: 'Veera',         role: 'manager' },
-  { username: 'teja',    password: 'teja@123',     display: 'Teja',          role: 'manager' },
-  { username: 'sakshi',  password: 'sakshi@123',   display: 'Sakshi',        role: 'manager' },
-  { username: 'ramya',   password: 'ramya@123',    display: 'Ramya',         role: 'manager' },
-];
-
 export default function Login({ onLogin }) {
-  const [view,    setView]    = useState('login');
+  const [view,     setView]     = useState('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error,    setError]    = useState('');
@@ -45,26 +34,25 @@ export default function Login({ onLogin }) {
     setLoading(true); setError('');
     const uname = username.trim();
 
-    // 1. Check admins locally
+    // 1. Admins — always local, passwords never change
     const admin = ADMIN_USERS.find(u => u.username === uname && u.password === password);
     if (admin) { setLoading(false); onLogin({ ...admin }); return; }
 
-    // 2. Check managers via backend (supports newly added managers)
+    // 2. Managers — ALWAYS validate via backend (uses current DB password)
+    //    NO fallback to hardcoded list — this ensures changed passwords work
     try {
       const res = await api.post('/auth/login', { username: uname, password });
-      if (res.data.success) { setLoading(false); onLogin(res.data.user); return; }
-    } catch {
-      // Backend unreachable — fall back to local list
-      const fallback = FALLBACK_MANAGERS.find(u => u.username === uname && u.password === password);
-      if (fallback) {
+      if (res.data.success) {
         setLoading(false);
-        const { password: _p, ...safe } = fallback;
-        onLogin(safe);
+        onLogin(res.data.user);
         return;
       }
+      // Backend responded but credentials wrong
+      setError('Invalid username or password. Please try again.');
+    } catch {
+      // Backend unreachable — show error, do NOT fall back to old passwords
+      setError('Cannot reach server. Please check your connection and try again.');
     }
-
-    setError('Invalid username or password. Please try again.');
     setLoading(false);
   };
 
@@ -72,23 +60,34 @@ export default function Login({ onLogin }) {
   const handleRequestOtp = async (e) => {
     e.preventDefault(); setCpError(''); setCpSuccess('');
     const uname = cpUsername.trim();
-    if (!uname)   { setCpError('Enter your username.'); return; }
+    if (!uname)    { setCpError('Enter your username.'); return; }
     if (!cpCurrent) { setCpError('Enter your current password.'); return; }
     if (!cpNew || cpNew.length < 6) { setCpError('New password must be at least 6 characters.'); return; }
     if (cpNew !== cpConfirm) { setCpError('Passwords do not match.'); return; }
 
     setOtpLoading(true);
-    // Verify current password via backend
+    // Verify current password via backend (checks live DB password)
     try {
       const verify = await api.post('/auth/login', { username: uname, password: cpCurrent });
-      if (!verify.data.success) { setCpError('Current password is incorrect.'); setOtpLoading(false); return; }
-    } catch { setCpError('Could not verify password. Check your connection.'); setOtpLoading(false); return; }
+      if (!verify.data.success) {
+        setCpError('Current password is incorrect.');
+        setOtpLoading(false);
+        return;
+      }
+    } catch {
+      setCpError('Cannot reach server. Check your connection.');
+      setOtpLoading(false);
+      return;
+    }
 
+    // Request OTP
     try {
       const res = await api.post('/auth/request-otp', { username: uname, newPassword: cpNew });
       if (res.data.success) { setCpSuccess(res.data.message); setCpStep('otp'); }
       else { setCpError(res.data.message || 'Failed to generate OTP.'); }
-    } catch (err) { setCpError(err?.response?.data?.message || 'Server error.'); }
+    } catch (err) {
+      setCpError(err?.response?.data?.message || 'Server error.');
+    }
     setOtpLoading(false);
   };
 
@@ -101,7 +100,9 @@ export default function Login({ onLogin }) {
       const res = await api.post('/auth/verify-otp', { username: cpUsername.trim(), otp: otp.trim() });
       if (res.data.success) { setCpSuccess(res.data.message); setCpStep('done'); }
       else { setCpError(res.data.message || 'Invalid OTP.'); }
-    } catch (err) { setCpError(err?.response?.data?.message || 'Server error.'); }
+    } catch (err) {
+      setCpError(err?.response?.data?.message || 'Server error.');
+    }
     setOtpLoading(false);
   };
 
