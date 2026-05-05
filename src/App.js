@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { BrowserRouter, Routes, Route, NavLink, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import QuotationForm from './pages/QuotationForm';
 import QuotationList from './pages/QuotationList';
+import ManagerPanel  from './pages/ManagerPanel';
 import Login from './pages/Login';
 import './App.css';
 
@@ -26,12 +27,22 @@ function Navbar({ user, onLogout }) {
           </svg>
           Dashboard
         </NavLink>
-        {(
-          <NavLink to="/new" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+
+        <NavLink to="/new" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M8 2V14M2 8H14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+          </svg>
+          New Quotation
+        </NavLink>
+
+        {user.role === 'admin' && (
+          <NavLink to="/managers" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M8 2V14M2 8H14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              <circle cx="6" cy="5" r="3" stroke="currentColor" strokeWidth="1.3" fill="none"/>
+              <path d="M1 13c0-2.76 2.24-5 5-5h2c2.76 0 5 2.24 5 5" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" fill="none"/>
+              <path d="M12 2v4M10 4h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/>
             </svg>
-            New Quotation
+            Managers
           </NavLink>
         )}
       </div>
@@ -39,7 +50,9 @@ function Navbar({ user, onLogout }) {
       <div className="nav-user-row">
         <span className="nav-username">
           {user.role === 'admin' ? '👑' : '🏗️'} {user.display}
-          <span style={{marginLeft:6,fontSize:10,padding:'2px 8px',borderRadius:20,background:user.role==='admin'?'#E8471C':'#3B82F6',color:'#fff',fontWeight:700,letterSpacing:0.5}}>
+          <span style={{marginLeft:6,fontSize:10,padding:'2px 8px',borderRadius:20,
+            background:user.role==='admin'?'#E8471C':'#3B82F6',
+            color:'#fff',fontWeight:700,letterSpacing:0.5}}>
             {user.role === 'admin' ? 'ADMIN' : 'MANAGER'}
           </span>
         </span>
@@ -58,7 +71,10 @@ export default function App() {
   if (!user) {
     return (
       <>
-        <Toaster position="top-right" toastOptions={{ style: { background: '#1C1C1C', color: '#F0EDE8', border: '1px solid #2E2E2E', fontFamily: 'DM Sans, sans-serif' }, success: { iconTheme: { primary: '#E8471C', secondary: '#131313' } } }} />
+        <Toaster position="top-right" toastOptions={{
+          style: { background: '#1C1C1C', color: '#F0EDE8', border: '1px solid #2E2E2E', fontFamily: 'DM Sans, sans-serif' },
+          success: { iconTheme: { primary: '#E8471C', secondary: '#131313' } }
+        }} />
         <Login onLogin={handleLogin} />
       </>
     );
@@ -66,19 +82,19 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Toaster
-        position="top-right"
-        toastOptions={{
-          style: { background: '#1C1C1C', color: '#F0EDE8', border: '1px solid #2E2E2E', fontFamily: 'DM Sans, sans-serif' },
-          success: { iconTheme: { primary: '#E8471C', secondary: '#131313' } },
-        }}
-      />
+      <Toaster position="top-right" toastOptions={{
+        style: { background: '#1C1C1C', color: '#F0EDE8', border: '1px solid #2E2E2E', fontFamily: 'DM Sans, sans-serif' },
+        success: { iconTheme: { primary: '#E8471C', secondary: '#131313' } },
+      }} />
       <Navbar user={user} onLogout={handleLogout} />
       <main className="main-content">
         <Routes>
-          <Route path="/"            element={<QuotationList user={user} />} />
-          <Route path="/quotations"  element={<QuotationList user={user} />} />
-          <Route path="/new"         element={<QuotationForm />} />
+          <Route path="/"           element={<QuotationList user={user} />} />
+          <Route path="/quotations" element={<QuotationList user={user} />} />
+          <Route path="/new"        element={<QuotationForm user={user} />} />
+          {user.role === 'admin' && (
+            <Route path="/managers" element={<ManagerPanel />} />
+          )}
         </Routes>
       </main>
     </BrowserRouter>

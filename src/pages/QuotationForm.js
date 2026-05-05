@@ -70,14 +70,14 @@ const fileToBase64 = (file) => new Promise((resolve, reject) => {
 });
 
 // Allow decimal typing: store raw string, parse only on blur
-function NumInput({ value, onChange, className }) {
-  const [raw, setRaw] = React.useState(String(value ?? ''));
+function NumInput({ value, onChange, className, placeholder }) {
+  const [raw, setRaw] = React.useState(value === 0 ? '' : String(value ?? ''));
   React.useEffect(() => {
-    // Only sync from outside if not currently focused
     setRaw(v => {
       const parsed = parseFloat(v);
       if (!isNaN(parsed) && parsed === value) return v; // keep user's text
-      return value === 0 || value === '' ? '' : String(value);
+      if (value === 0 || value === '' || value === null || value === undefined) return '';
+      return String(value);
     });
   }, [value]);
   return (
@@ -85,20 +85,21 @@ function NumInput({ value, onChange, className }) {
       type="text"
       inputMode="decimal"
       className={className}
+      placeholder={placeholder}
       value={raw}
       onChange={e => {
         const v = e.target.value;
-        if (/^-?\d*\.?\d*$/.test(v)) { // only allow valid decimal chars
+        if (/^-?\d*\.?\d*$/.test(v)) {
           setRaw(v);
           const n = parseFloat(v);
           if (!isNaN(n)) onChange(n);
-          else if (v === '' || v === '-') onChange(0);
+          else onChange(0); // empty or partial → 0
         }
       }}
       onBlur={e => {
         const n = parseFloat(e.target.value);
         const final = isNaN(n) ? 0 : n;
-        setRaw(String(final));
+        setRaw(final === 0 ? '' : String(final));
         onChange(final);
       }}
     />
@@ -122,7 +123,7 @@ function RoomItemTableWithRemove({ items, onUpdate, onRemove }) {
               <td><NumInput className="cell-input num" value={item.width}    onChange={v => onUpdate(idx, 'width',    v)} /></td>
               <td><NumInput className="cell-input num" value={item.height}   onChange={v => onUpdate(idx, 'height',   v)} /></td>
               <td><NumInput className="cell-input num" value={item.nos}      onChange={v => onUpdate(idx, 'nos',      v)} /></td>
-              <td className="calc-cell">{calcArea(item) || '—'}</td>
+              <td className="calc-cell">{calcArea(item) > 0 ? calcArea(item) : '—'}</td>
               <td>
                 <select className="cell-select" value={item.type} onChange={e => onUpdate(idx, 'type', e.target.value)}>
                   {['BOX','FRAME','PANELLING','GLASS','Others'].map(t => <option key={t}>{t}</option>)}
@@ -157,7 +158,7 @@ function SectionTable({ items, onUpdate, onRemove }) {
               <td><NumInput className="cell-input num" value={item.width}    onChange={v => onUpdate(idx, 'width',    v)} /></td>
               <td><NumInput className="cell-input num" value={item.height}   onChange={v => onUpdate(idx, 'height',   v)} /></td>
               <td><NumInput className="cell-input num" value={item.nos}      onChange={v => onUpdate(idx, 'nos',      v)} /></td>
-              <td className="calc-cell">{calcArea(item) || '—'}</td>
+              <td className="calc-cell">{calcArea(item) > 0 ? calcArea(item) : '—'}</td>
               <td>
                 <select className="cell-select" value={item.type} onChange={e => onUpdate(idx, 'type', e.target.value)}>
                   {['BOX','FRAME','PANELLING','GLASS','FIXED'].map(t => <option key={t}>{t}</option>)}
@@ -366,7 +367,7 @@ function PaymentModal({ payStages, setPayStages, onClose, clientName, smName }) 
 }
 
 
-export default function QuotationForm() {
+export default function QuotationForm({ user }) {
   const navigate = useNavigate();
   const [projectType, setProjectType] = useState('');
   const [floorPlan, setFloorPlan] = useState(null);
@@ -383,7 +384,10 @@ export default function QuotationForm() {
   const [villaNumber, setVillaNumber] = useState('');
   const [siteName, setSiteName] = useState('');
   const [location, setLocation] = useState('');
-  const [smName, setSmName] = useState('');
+  // Auto-fill site manager name from logged-in manager's display name
+  const [smName, setSmName] = useState(() =>
+    user && user.role === 'manager' ? user.display : ''
+  );
   const [smPhone, setSmPhone] = useState('');
   const [smDesignation, setSmDesignation] = useState('');
   const [smBranch, setSmBranch] = useState('');
@@ -473,16 +477,21 @@ export default function QuotationForm() {
     if (!newRoomName.trim()) { toast.error('Enter a room name'); return; }
     const key = `custom_${Date.now()}`;
     const colorIdx = Object.keys(rooms).length % ROOM_COLORS.length;
-    setRooms(prev => ({
-      ...prev,
-      [key]: {
+    setRooms(prev => {
+      const entries = Object.entries(prev);
+      // Find cbr index; if not found, fall back to inserting before accessories
+      const cbrIdx = entries.findIndex(([k]) => k === 'cbr');
+      const insertAt = cbrIdx !== -1 ? cbrIdx + 1 : Math.max(0, entries.findIndex(([k]) => k === 'accessories'));
+      const newRoom = [key, {
         label: newRoomName.trim(), color: ROOM_COLORS[colorIdx], isCustom: true,
         pdfFile: null, pdfName: '',
         items: [
           { name: 'New Item', width: 0, height: 0, nos: 0, type: 'BOX', unitCost: 0, remarks: '' },
         ]
-      }
-    }));
+      }];
+      entries.splice(insertAt, 0, newRoom);
+      return Object.fromEntries(entries);
+    });
     setActiveRoom(key);
     setNewRoomName('');
     setShowAddRoom(false);
@@ -617,7 +626,7 @@ export default function QuotationForm() {
       const res = await api.post(`/quotations`, payload);
       toast.success(`Quotation #${res.data.quotation_id||res.data.id} saved successfully!`);
       localStorage.removeItem('deeraj_draft'); // clear draft after save
-      setClientName(''); setClientPhone(''); setClientAltPhone(''); setFullAddress(''); setPincode(''); setVillaNumber(''); setSiteName(''); setLocation(''); setSmName(''); setSmPhone(''); setSmDesignation(''); setSmBranch(''); setProjectType(''); setFloorPlan(null); setPlan2D(null); setPlan3D(null); setTcItems([...DEFAULT_TC]); setPayStages(DEFAULT_PAY_STAGES.map(s => ({ ...s })));
+      setClientName(''); setClientPhone(''); setClientAltPhone(''); setFullAddress(''); setPincode(''); setVillaNumber(''); setSiteName(''); setLocation(''); setSmName(user && user.role === 'manager' ? user.display : ''); setSmPhone(''); setSmDesignation(''); setSmBranch(''); setProjectType(''); setFloorPlan(null); setPlan2D(null); setPlan3D(null); setTcItems([...DEFAULT_TC]); setPayStages(DEFAULT_PAY_STAGES.map(s => ({ ...s })));
       setRooms(() => { const r = {}; Object.entries(DEFAULT_ROOMS).forEach(([k, v]) => { r[k] = { ...v, items: v.items.map(i => ({ ...i, width:0, height:0, nos:0, unitCost:0, remarks:'' })), pdfFile: null, pdfName: '' }; }); return r; });
       setSections(() => { const s = {}; Object.entries(INITIAL_SECTIONS).forEach(([k, v]) => { s[k] = { ...v, items: v.items.map(i => ({ ...i })) }; }); return s; });
       setGstPercent(0); setDiscountPercent(0);
@@ -815,7 +824,10 @@ export default function QuotationForm() {
           <div className="person-grid three-col">
             <div className="field-group">
               <label className="field-label">Full Name</label>
-              <input className="field-input" placeholder="e.g. Chandu" value={smName} onChange={e => setSmName(e.target.value)} />
+              <input className="field-input" placeholder="e.g. Chandu" value={smName} onChange={e => setSmName(e.target.value)}
+                readOnly={user && user.role === 'manager'}
+                style={user && user.role === 'manager' ? { background: '#f5f5f5', color: '#888', cursor: 'not-allowed' } : {}}
+              />
             </div>
             <div className="field-group">
               <label className="field-label">Phone Number</label>

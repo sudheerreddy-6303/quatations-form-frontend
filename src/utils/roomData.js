@@ -72,20 +72,24 @@ export const DEFAULT_ROOMS = {
  * Qty-only (no W/H): total = nos * unitCost
  */
 export const calcArea = (item) => {
-  const w = parseFloat(item.width) || 0;
-  const h = parseFloat(item.height) || 0;
-  const n = parseFloat(item.nos) || 1;
+  const w   = parseFloat(item.width)  || 0;
+  const h   = parseFloat(item.height) || 0;
+  const nos = parseFloat(item.nos);          // intentionally no fallback
+  const n   = isNaN(nos) || nos === 0 ? 0 : nos; // 0 means "not entered yet"
   if (item.type === 'FIXED' || (!w && !h)) return 0;
+  if (n === 0) return 0;                     // don't calculate until qty is entered
   return parseFloat(((w * h * n) / 144).toFixed(2));
 };
 
 export const calcTotal = (item) => {
-  const nos      = parseFloat(item.nos)      || 0;
+  const nos      = parseFloat(item.nos);
+  const n        = isNaN(nos) ? 0 : nos;    // 0 = not entered → no calculation
   const unitCost = parseFloat(item.unitCost) || 0;
   const w        = parseFloat(item.width)    || 0;
   const h        = parseFloat(item.height)   || 0;
-  if (item.type === 'FIXED') return Math.round(unitCost * (nos || 1) * 100) / 100;
-  if (!w && !h) return Math.round(nos * unitCost * 100) / 100;
+  if (item.type === 'FIXED') return Math.round(unitCost * (n === 0 ? 1 : n) * 100) / 100;
+  if (!w && !h) return Math.round(n * unitCost * 100) / 100;
+  if (n === 0) return 0;                     // no qty entered → no total
   return Math.round(calcArea(item) * unitCost * 100) / 100;
 };
 

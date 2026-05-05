@@ -187,3 +187,36 @@
   .login-card { padding: 36px 24px; }
   .login-title { font-size: 22px; }
 }
+
+/* ── Success alert ─────────────────────────────────────────── */
+.login-success {
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  color: #166534;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Subtle link-style button ──────────────────────────────── */
+.btn-link-subtle {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #E8471C;
+  font-size: 13px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 8px 0 0;
+  text-align: center;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+.btn-link-subtle:hover { opacity: 1; }
