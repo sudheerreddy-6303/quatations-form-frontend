@@ -36,22 +36,29 @@ export default function Login({ onLogin }) {
 
     // 1. Admins — always local, passwords never change
     const admin = ADMIN_USERS.find(u => u.username === uname && u.password === password);
-    if (admin) { setLoading(false); onLogin({ ...admin }); return; }
-
-    // 2. Managers — ALWAYS validate via backend (uses current DB password)
-    //    NO fallback to hardcoded list — this ensures changed passwords work
+    // All authentication goes through backend — no local fallback
     try {
       const res = await api.post('/auth/login', { username: uname, password });
       if (res.data.success) {
         setLoading(false);
+        // Store JWT token securely
+        if (res.data.token) {
+          localStorage.setItem('auth_token', res.data.token);
+          localStorage.setItem('auth_user', JSON.stringify(res.data.user));
+        }
         onLogin(res.data.user);
         return;
       }
-      // Backend responded but credentials wrong
       setError('Invalid username or password. Please try again.');
-    } catch {
-      // Backend unreachable — show error, do NOT fall back to old passwords
-      setError('Cannot reach server. Please check your connection and try again.');
+    } catch (err) {
+      const msg = err?.response?.data?.message || '';
+      if (msg.includes('Too many')) {
+        setError('Too many login attempts. Please wait 15 minutes and try again.');
+      } else if (err.response?.status === 401) {
+        setError('Invalid username or password.');
+      } else {
+        setError('Cannot reach server. Please check your connection and try again.');
+      }
     }
     setLoading(false);
   };

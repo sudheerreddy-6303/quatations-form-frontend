@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 import { DEFAULT_ROOMS, calcArea, calcTotal, calcRoomTotal } from '../utils/roomData';
+import ProjectManagement from '../components/ProjectManagement';
 import './QuotationForm.css';
 
 
@@ -40,24 +41,35 @@ const ROOM_ICONS = {
 
 const ROOM_COLORS = ['#8B5CF6','#3B82F6','#10B981','#F59E0B','#EF4444','#C9A84C','#EC4899','#06B6D4','#84CC16','#F97316'];
 
-const newTableRow = () => ({ name: '', width: 0, height: 0, nos: 1, type: 'FIXED', unitCost: 0, remarks: '' });
+const newTableRow = () => ({ name: '', width: 0, height: 0, nos: 0, type: 'BOX', unitCost: 0, remarks: '' });
 
 const INITIAL_SECTIONS = {
   electrical: {
     label: 'Electrical Accessories', badge: '⚡ Electrical', badgeClass: 'electrical-badge', sectionNum: '05',
-    items: [{ name: 'Switch Board', width: 0, height: 0, nos: 1, type: 'FIXED', unitCost: 0, remarks: '' }]
+    items: [
+      { name: 'Switch Board', width: 0, height: 0, nos: 0, type: 'FIXED', unitCost: 0, remarks: '' },
+      { name: 'Wiring (per sft)', width: 0, height: 0, nos: 0, type: 'BOX', unitCost: 0, remarks: '' },
+    ]
   },
   wooden: {
     label: 'Wooden Accessories', badge: '🪵 Wooden', badgeClass: 'wooden-badge', sectionNum: '06',
-    items: [{ name: 'Wooden Panel', width: 0, height: 0, nos: 1, type: 'FIXED', unitCost: 0, remarks: '' }]
+    items: [
+      { name: 'Wooden Panel', width: 0, height: 0, nos: 0, type: 'BOX', unitCost: 0, remarks: '' },
+      { name: 'Door Frame', width: 0, height: 0, nos: 0, type: 'FRAME', unitCost: 0, remarks: '' },
+    ]
   },
   marble: {
     label: 'Marble & Plumbing', badge: '🪨 Marble', badgeClass: 'marble-badge', sectionNum: '07',
-    items: [{ name: 'Marble Flooring', width: 0, height: 0, nos: 1, type: 'FIXED', unitCost: 0, remarks: '' }]
+    items: [
+      { name: 'Marble Flooring', width: 0, height: 0, nos: 0, type: 'BOX', unitCost: 0, remarks: '' },
+      { name: 'Plumbing Work', width: 0, height: 0, nos: 0, type: 'FIXED', unitCost: 0, remarks: '' },
+    ]
   },
   general: {
     label: 'General', badge: '📦 General', badgeClass: 'general-badge', sectionNum: '08',
-    items: [{ name: 'Miscellaneous', width: 0, height: 0, nos: 1, type: 'FIXED', unitCost: 0, remarks: '' }]
+    items: [
+      { name: 'Miscellaneous', width: 0, height: 0, nos: 0, type: 'FIXED', unitCost: 0, remarks: '' },
+    ]
   }
 };
 
@@ -123,7 +135,9 @@ function RoomItemTableWithRemove({ items, onUpdate, onRemove }) {
               <td><NumInput className="cell-input num" value={item.width}    onChange={v => onUpdate(idx, 'width',    v)} /></td>
               <td><NumInput className="cell-input num" value={item.height}   onChange={v => onUpdate(idx, 'height',   v)} /></td>
               <td><NumInput className="cell-input num" value={item.nos}      onChange={v => onUpdate(idx, 'nos',      v)} /></td>
-              <td className="calc-cell">{calcArea(item) > 0 ? calcArea(item) : '—'}</td>
+              <td className="calc-cell" style={{color: calcArea(item) > 0 ? '#E8471C' : '#aaa', fontWeight: calcArea(item) > 0 ? 600 : 400}}>
+                {item.type === 'FIXED' ? 'Fixed' : calcArea(item) > 0 ? calcArea(item) : '—'}
+              </td>
               <td>
                 <select className="cell-select" value={item.type} onChange={e => onUpdate(idx, 'type', e.target.value)}>
                   {['BOX','FRAME','PANELLING','GLASS','Others'].map(t => <option key={t}>{t}</option>)}
@@ -152,24 +166,35 @@ function SectionTable({ items, onUpdate, onRemove }) {
           </tr>
         </thead>
         <tbody>
-          {items.map((item, idx) => (
-            <tr key={idx} className="item-row">
-              <td><input className="cell-input" value={item.name} onChange={e => onUpdate(idx, 'name', e.target.value)} /></td>
-              <td><NumInput className="cell-input num" value={item.width}    onChange={v => onUpdate(idx, 'width',    v)} /></td>
-              <td><NumInput className="cell-input num" value={item.height}   onChange={v => onUpdate(idx, 'height',   v)} /></td>
-              <td><NumInput className="cell-input num" value={item.nos}      onChange={v => onUpdate(idx, 'nos',      v)} /></td>
-              <td className="calc-cell">{calcArea(item) > 0 ? calcArea(item) : '—'}</td>
-              <td>
-                <select className="cell-select" value={item.type} onChange={e => onUpdate(idx, 'type', e.target.value)}>
-                  {['BOX','FRAME','PANELLING','GLASS','FIXED'].map(t => <option key={t}>{t}</option>)}
-                </select>
-              </td>
-              <td><NumInput className="cell-input num" value={item.unitCost} onChange={v => onUpdate(idx, 'unitCost', v)} /></td>
-              <td className="total-cell">₹{calcTotal(item).toLocaleString('en-IN')}</td>
-              <td><input className="cell-input" value={item.remarks} onChange={e => onUpdate(idx, 'remarks', e.target.value)} /></td>
-              <td><button type="button" className="btn-remove" onClick={() => onRemove(idx)}>✕</button></td>
-            </tr>
-          ))}
+          {items.map((item, idx) => {
+            const area  = calcArea(item);
+            const total = calcTotal(item);
+            // Show SFT when type is not FIXED and W/H/nos are entered
+            const showArea = item.type !== 'FIXED' &&
+              parseFloat(item.width) > 0 &&
+              parseFloat(item.height) > 0 &&
+              parseFloat(item.nos) > 0;
+            return (
+              <tr key={idx} className="item-row">
+                <td><input className="cell-input" value={item.name} onChange={e => onUpdate(idx, 'name', e.target.value)} /></td>
+                <td><NumInput className="cell-input num" value={item.width}    onChange={v => onUpdate(idx, 'width',    v)} placeholder="W" /></td>
+                <td><NumInput className="cell-input num" value={item.height}   onChange={v => onUpdate(idx, 'height',   v)} placeholder="H" /></td>
+                <td><NumInput className="cell-input num" value={item.nos}      onChange={v => onUpdate(idx, 'nos',      v)} placeholder="Nos" /></td>
+                <td className="calc-cell" style={{color: showArea ? '#E8471C' : '#aaa', fontWeight: showArea ? 600 : 400}}>
+                  {showArea ? area : item.type === 'FIXED' ? 'Fixed' : '—'}
+                </td>
+                <td>
+                  <select className="cell-select" value={item.type} onChange={e => onUpdate(idx, 'type', e.target.value)}>
+                    {['BOX','FRAME','PANELLING','GLASS','FIXED'].map(t => <option key={t}>{t}</option>)}
+                  </select>
+                </td>
+                <td><NumInput className="cell-input num" value={item.unitCost} onChange={v => onUpdate(idx, 'unitCost', v)} placeholder="Rate" /></td>
+                <td className="total-cell">₹{total.toLocaleString('en-IN')}</td>
+                <td><input className="cell-input" value={item.remarks} onChange={e => onUpdate(idx, 'remarks', e.target.value)} /></td>
+                <td><button type="button" className="btn-remove" onClick={() => onRemove(idx)}>✕</button></td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -369,6 +394,7 @@ function PaymentModal({ payStages, setPayStages, onClose, clientName, smName }) 
 
 export default function QuotationForm({ user }) {
   const navigate = useNavigate();
+  const [showProjectMgmt, setShowProjectMgmt] = useState(false);
   const [projectType, setProjectType] = useState('');
   const [floorPlan, setFloorPlan] = useState(null);
   const [plan2D, setPlan2D] = useState(null);
@@ -391,6 +417,8 @@ export default function QuotationForm({ user }) {
   const [smPhone, setSmPhone] = useState('');
   const [smDesignation, setSmDesignation] = useState('');
   const [smBranch, setSmBranch] = useState('');
+  const [projectStartDate, setProjectStartDate] = useState('');
+  const [projectEndDate,   setProjectEndDate]   = useState('');
   const [tcItems, setTcItems] = useState([...DEFAULT_TC]);
   const [newTcText, setNewTcText] = useState('');
   const [payStages, setPayStages] = useState(DEFAULT_PAY_STAGES.map(s => ({ ...s })));
@@ -462,7 +490,7 @@ export default function QuotationForm({ user }) {
         badge: '📦 ' + name,
         badgeClass: 'general-badge',
         sectionNum: String(Object.keys(prev).length + 5),
-        items: [{ name: 'Item', width: 0, height: 0, nos: 1, type: 'FIXED', unitCost: 0, remarks: '' }],
+        items: [{ name: 'Item', width: 0, height: 0, nos: 0, type: 'BOX', unitCost: 0, remarks: '' }],
         isCustom: true,
         color,
       }
@@ -479,9 +507,26 @@ export default function QuotationForm({ user }) {
     const colorIdx = Object.keys(rooms).length % ROOM_COLORS.length;
     setRooms(prev => {
       const entries = Object.entries(prev);
-      // Find cbr index; if not found, fall back to inserting before accessories
-      const cbrIdx = entries.findIndex(([k]) => k === 'cbr');
-      const insertAt = cbrIdx !== -1 ? cbrIdx + 1 : Math.max(0, entries.findIndex(([k]) => k === 'accessories'));
+      // Find the last custom room index; new room goes right after it
+      // If no custom rooms yet, insert after cbr
+      // If no cbr either, insert before accessories
+      let insertAt = -1;
+
+      // Find last custom room
+      for (let i = entries.length - 1; i >= 0; i--) {
+        if (entries[i][0].startsWith('custom_')) { insertAt = i + 1; break; }
+      }
+
+      // No custom rooms yet → insert after cbr
+      if (insertAt === -1) {
+        const cbrIdx = entries.findIndex(([k]) => k === 'cbr');
+        insertAt = cbrIdx !== -1 ? cbrIdx + 1 : entries.length;
+      }
+
+      // Safety: never insert after accessories (keep accessories last)
+      const accIdx = entries.findIndex(([k]) => k === 'accessories');
+      if (accIdx !== -1 && insertAt > accIdx) insertAt = accIdx;
+
       const newRoom = [key, {
         label: newRoomName.trim(), color: ROOM_COLORS[colorIdx], isCustom: true,
         pdfFile: null, pdfName: '',
@@ -523,6 +568,7 @@ export default function QuotationForm({ user }) {
           projectType, clientName, clientPhone, clientAltPhone, fullAddress,
           pincode, villaNumber, siteName, location,
           smName, smPhone, smDesignation, smBranch,
+          projectStartDate, projectEndDate,
           rooms: Object.fromEntries(Object.entries(rooms).map(([k,v])=>{
             const {pdfFile,...rest}=v; return [k,rest];
           })),
@@ -538,6 +584,7 @@ export default function QuotationForm({ user }) {
     return () => clearTimeout(autoSaveTimer.current);
   }, [projectType, clientName, clientPhone, clientAltPhone, fullAddress,
       pincode, villaNumber, siteName, location, smName, smPhone, smDesignation, smBranch,
+      projectStartDate, projectEndDate,
       rooms, sections, gstPercent, discountPercent, tcItems, payStages]);
 
   // Restore draft on mount
@@ -618,6 +665,8 @@ export default function QuotationForm({ user }) {
         plan_3d: plan3DB64 ? { name: plan3D.name, data: plan3DB64 } : null,
         site_manager_name: smName, site_manager_phone: smPhone,
         site_manager_designation: smDesignation, site_manager_branch: smBranch,
+        project_start_date: projectStartDate || null,
+        project_end_date:   projectEndDate   || null,
         rooms: roomsToSave, accessories: roomsToSave.accessories,
         pay_stages: payStages,
         ceiling_data: sections, tc_items: Array.isArray(tcItems) ? tcItems : (typeof tcItems === 'string' ? JSON.parse(tcItems) : []), discount_percent: discountPercent, discount_amount: discountAmount, gst_percent: gstPercent, gst_amount: gstAmount,
@@ -626,7 +675,7 @@ export default function QuotationForm({ user }) {
       const res = await api.post(`/quotations`, payload);
       toast.success(`Quotation #${res.data.quotation_id||res.data.id} saved successfully!`);
       localStorage.removeItem('deeraj_draft'); // clear draft after save
-      setClientName(''); setClientPhone(''); setClientAltPhone(''); setFullAddress(''); setPincode(''); setVillaNumber(''); setSiteName(''); setLocation(''); setSmName(user && user.role === 'manager' ? user.display : ''); setSmPhone(''); setSmDesignation(''); setSmBranch(''); setProjectType(''); setFloorPlan(null); setPlan2D(null); setPlan3D(null); setTcItems([...DEFAULT_TC]); setPayStages(DEFAULT_PAY_STAGES.map(s => ({ ...s })));
+      setClientName(''); setClientPhone(''); setClientAltPhone(''); setFullAddress(''); setPincode(''); setVillaNumber(''); setSiteName(''); setLocation(''); setSmName(user && user.role === 'manager' ? user.display : ''); setSmPhone(''); setSmDesignation(''); setSmBranch(''); setProjectStartDate(''); setProjectEndDate(''); setProjectType(''); setFloorPlan(null); setPlan2D(null); setPlan3D(null); setTcItems([...DEFAULT_TC]); setPayStages(DEFAULT_PAY_STAGES.map(s => ({ ...s })));
       setRooms(() => { const r = {}; Object.entries(DEFAULT_ROOMS).forEach(([k, v]) => { r[k] = { ...v, items: v.items.map(i => ({ ...i, width:0, height:0, nos:0, unitCost:0, remarks:'' })), pdfFile: null, pdfName: '' }; }); return r; });
       setSections(() => { const s = {}; Object.entries(INITIAL_SECTIONS).forEach(([k, v]) => { s[k] = { ...v, items: v.items.map(i => ({ ...i })) }; }); return s; });
       setGstPercent(0); setDiscountPercent(0);
@@ -678,12 +727,33 @@ export default function QuotationForm({ user }) {
               {autoSaveStatus==='saved'?'✓ Draft saved':autoSaveStatus==='saving'?'⏳ Saving…':'● Unsaved'}
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => setShowProjectMgmt(true)}
+            style={{
+              display:'flex',alignItems:'center',gap:'7px',padding:'9px 16px',
+              background:'linear-gradient(135deg,#1A1A1A 0%,#2d1200 100%)',
+              border:'none',borderRadius:'10px',
+              fontFamily:"'DM Sans',sans-serif",fontSize:'13px',fontWeight:'700',
+              color:'#fff',cursor:'pointer',transition:'all 0.2s',flexShrink:0,
+              boxShadow:'0 2px 10px rgba(232,71,28,0.25)',
+            }}
+            onMouseEnter={e=>e.currentTarget.style.transform='translateY(-1px)'}
+            onMouseLeave={e=>e.currentTarget.style.transform='translateY(0)'}
+          >
+            <span style={{fontSize:'15px'}}>📋</span> Project Management
+          </button>
           <div className="grand-total-badge">
             <span className="gt-label">Grand Total</span>
             <span className="gt-amount">₹{grandTotal.toLocaleString('en-IN')}</span>
           </div>
         </div>
       </div>
+
+      {/* Project Management Modal */}
+      {showProjectMgmt && (
+        <ProjectManagement onClose={() => setShowProjectMgmt(false)} />
+      )}
 
       {/* Customer name display above form */}
       {clientName && (
@@ -845,7 +915,25 @@ export default function QuotationForm({ user }) {
                   <option key={b} value={b}>{b}</option>
                 ))}
               </select>
-            </div> 
+            </div>
+            <div className="field-group">
+              <label className="field-label">🗓 Project Start Date</label>
+              <input
+                className="field-input"
+                type="date"
+                value={projectStartDate}
+                onChange={e => setProjectStartDate(e.target.value)}
+              />
+            </div>
+            <div className="field-group">
+              <label className="field-label">🏁 Project End Date</label>
+              <input
+                className="field-input"
+                type="date"
+                value={projectEndDate}
+                onChange={e => setProjectEndDate(e.target.value)}
+              />
+            </div>
           </div>
         </section>
 

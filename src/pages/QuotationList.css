@@ -2,11 +2,12 @@
 
 * { box-sizing: border-box; }
 
-.list-page { max-width: 1300px; margin: 0 auto; padding: 0 4px; }
+.list-page { width: 100%; padding: 0; margin: 0; }
 
 .list-header {
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 32px; flex-wrap: wrap; gap: 16px;
+  padding: 0 24px;
 }
 
 .list-search-wrap { position: relative; display: flex; align-items: center; }
@@ -48,7 +49,7 @@
 .col-paid   { min-width: 95px; }
 .col-status { min-width: 130px; }
 .col-date   { min-width: 95px; }
-.col-actions{ min-width: 250px; width: 250px; }
+.col-actions{ min-width: 110px; width: 110px; }
 
 /* ROWS */
 .list-row {

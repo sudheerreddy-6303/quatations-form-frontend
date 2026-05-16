@@ -40,8 +40,7 @@ export default function ManagerPanel() {
 
   useEffect(() => {
     loadData();
-    const t = setInterval(loadData, 15000);
-    return () => clearInterval(t);
+    return () => {};
   }, [loadData]);
 
   const togglePw = (u) => setShowPw(p => ({ ...p, [u]: !p[u] }));

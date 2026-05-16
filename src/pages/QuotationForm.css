@@ -7,6 +7,7 @@
   --gold-light: #FFF0EC;
   --gold-pale: #FFF0EC;
   --dark: #1C1C1E;
+  --dark1:#E8471C
   --mid: #3A3A3C;
   --gray: #6B6B6B;
   --border: #E5E5E5;
@@ -57,7 +58,7 @@
 }
 
 .grand-total-badge {
-  background: var(--dark);
+  background: var(--dark1);
   border-radius: 16px;
   padding: 18px 28px;
   text-align: right;
@@ -69,7 +70,7 @@
   font-size: 10px;
   letter-spacing: 2.5px;
   text-transform: uppercase;
-  color: #999;
+  color: #ffffff;
   margin-bottom: 6px;
   font-weight: 600;
 }
@@ -78,7 +79,7 @@
   font-family: 'Playfair Display', serif;
   font-size: 32px;
   font-weight: 700;
-  color: #E8471C;
+  color: #ffffff;
 }
 
 /* ─── SECTIONS ───────────────────────────────────────────── */

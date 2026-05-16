@@ -3,7 +3,8 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import QuotationForm from './pages/QuotationForm';
 import QuotationList from './pages/QuotationList';
-import ManagerPanel  from './pages/ManagerPanel';
+import ManagerPanel       from './pages/ManagerPanel';
+import ProjectDashboard    from './pages/ProjectDashboard';
 import Login from './pages/Login';
 import './App.css';
 
@@ -36,6 +37,16 @@ function Navbar({ user, onLogout }) {
         </NavLink>
 
         {user.role === 'admin' && (
+          <NavLink to="/projects" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <rect x="1" y="9" width="4" height="6" rx="1" stroke="currentColor" strokeWidth="1.3" fill="none"/>
+              <rect x="6" y="5" width="4" height="10" rx="1" stroke="currentColor" strokeWidth="1.3" fill="none"/>
+              <rect x="11" y="1" width="4" height="14" rx="1" stroke="currentColor" strokeWidth="1.3" fill="none"/>
+            </svg>
+            Projects
+          </NavLink>
+        )}
+        {user.role === 'admin' && (
           <NavLink to="/managers" className={({ isActive }) => isActive ? 'nav-link active' : 'nav-link'}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <circle cx="6" cy="5" r="3" stroke="currentColor" strokeWidth="1.3" fill="none"/>
@@ -63,10 +74,24 @@ function Navbar({ user, onLogout }) {
 }
 
 export default function App() {
-  const [user, setUser] = useState(null);
+  // Restore session from localStorage (survives page refresh)
+  const [user, setUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('auth_user');
+      const token = localStorage.getItem('auth_token');
+      if (saved && token) return JSON.parse(saved);
+    } catch {}
+    return null;
+  });
 
-  const handleLogin  = (u) => setUser(u);
-  const handleLogout = () => setUser(null);
+  const handleLogin = (u) => setUser(u);
+
+  const handleLogout = () => {
+    // Clear JWT token and user data
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('auth_user');
+    setUser(null);
+  };
 
   if (!user) {
     return (
@@ -94,6 +119,9 @@ export default function App() {
           <Route path="/new"        element={<QuotationForm user={user} />} />
           {user.role === 'admin' && (
             <Route path="/managers" element={<ManagerPanel />} />
+          )}
+          {user.role === 'admin' && (
+            <Route path="/projects" element={<ProjectDashboard />} />
           )}
         </Routes>
       </main>

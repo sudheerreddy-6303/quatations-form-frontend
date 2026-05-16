@@ -1,12 +1,1218 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
+
+/* ══════════════════════════════════════════════════════════════
+   EDIT REQUEST — Manager sends, Admin approves
+══════════════════════════════════════════════════════════════ */
+
+function EditRequestModal({ quotation, user, onClose, onSent }) {
+  const [reason,   setReason]   = useState('');
+  const [sending,  setSending]  = useState(false);
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:9999,
+      display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div style={{background:'#fff',borderRadius:18,padding:32,width:460,
+        maxWidth:'100%',boxShadow:'0 24px 60px rgba(0,0,0,0.2)'}}
+        onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:20}}>
+          <div style={{width:44,height:44,background:'#FFF4F0',borderRadius:12,
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:22}}>
+            ✏️
+          </div>
+          <div>
+            <div style={{fontWeight:800,fontSize:17,color:'#1a1a1a'}}>Request Edit Permission</div>
+            <div style={{fontSize:12,color:'#aaa',marginTop:2}}>
+              {quotation.site_name || quotation.customer_name} — Booked Project
+            </div>
+          </div>
+        </div>
+        <div style={{background:'#FFF8F5',border:'1px solid rgba(232,71,28,0.2)',
+          borderRadius:10,padding:'12px 14px',marginBottom:18,fontSize:13,color:'#92400e'}}>
+          🔒 This project is <strong>Booked</strong>. To edit it, please send a request to admin explaining the reason.
+        </div>
+        <div style={{marginBottom:16}}>
+          <label style={{display:'block',fontSize:11,fontWeight:700,color:'#888',
+            textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>
+            Reason for edit *
+          </label>
+          <textarea
+            autoFocus
+            placeholder="e.g. Client requested changes to room dimensions, need to update pricing…"
+            value={reason}
+            onChange={e=>setReason(e.target.value)}
+            style={{width:'100%',padding:'10px 13px',border:'1.5px solid #e8e8e8',
+              borderRadius:9,fontSize:14,fontFamily:'DM Sans,sans-serif',
+              outline:'none',resize:'vertical',minHeight:90,boxSizing:'border-box',
+              transition:'border-color 0.2s'}}
+            onFocus={e=>e.target.style.borderColor='#E8471C'}
+            onBlur={e=>e.target.style.borderColor='#e8e8e8'}
+          />
+        </div>
+        <div style={{display:'flex',gap:10}}>
+          <button
+            disabled={sending || !reason.trim()}
+            onClick={async()=>{
+              if (!reason.trim()) { toast.error('Please enter a reason.'); return; }
+              setSending(true);
+              try {
+                await api.post('/edit-requests', {
+                  quotation_id: quotation.id,
+                  manager_name: user.display || user.username,
+                  manager_user: user.username,
+                  reason: reason.trim(),
+                });
+                toast.success('Edit request sent to admin!');
+                onSent && onSent();
+                onClose();
+              } catch (err) {
+                toast.error(err?.response?.data?.message || 'Failed to send request.');
+              }
+              setSending(false);
+            }}
+            style={{flex:1,padding:'11px',background:'#E8471C',color:'#fff',border:'none',
+              borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',
+              opacity:sending||!reason.trim()?0.6:1,fontFamily:'DM Sans,sans-serif'}}>
+            {sending ? 'Sending…' : '📤 Send Request'}
+          </button>
+          <button onClick={onClose}
+            style={{padding:'11px 18px',background:'#f5f5f5',border:'none',
+              borderRadius:10,fontWeight:600,fontSize:14,cursor:'pointer',color:'#666',
+              fontFamily:'DM Sans,sans-serif'}}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Inline completion % bar for table row ── */
+// CompletionBar — zero background activity
+// Loads ONCE per session when row scrolls into view, never polls
+const _cc = {}; // cache: id -> number|'pending'
+
+function CompletionBar({ quotationId }) {
+  const [pct, setPct] = React.useState(typeof _cc[quotationId] === 'number' ? _cc[quotationId] : null);
+  const ref = React.useRef();
+
+  React.useEffect(() => {
+    // Already loaded
+    if (typeof _cc[quotationId] === 'number') { setPct(_cc[quotationId]); return; }
+    // Already fetching
+    if (_cc[quotationId] === 'pending') return;
+
+    // Use IntersectionObserver — only load when row is visible on screen
+    const el = ref.current;
+    if (!el) return;
+
+    const obs = new IntersectionObserver(([entry]) => {
+      if (!entry.isIntersecting) return;
+      obs.disconnect();
+      if (_cc[quotationId] === 'pending' || typeof _cc[quotationId] === 'number') return;
+      _cc[quotationId] = 'pending';
+      api.get('/completion-status/' + quotationId)
+        .then(r => {
+          const v = r.data.data?.percentage ?? 0;
+          _cc[quotationId] = v;
+          setPct(v);
+        })
+        .catch(() => { _cc[quotationId] = 0; setPct(0); });
+    }, { threshold: 0 });
+
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [quotationId]);
+
+  return (
+    <div ref={ref} style={{textAlign:'center',minHeight:24}}>
+      {pct === null
+        ? <div style={{color:'#ddd',fontSize:10}}>—</div>
+        : <>
+          <div style={{fontFamily:'monospace',fontWeight:800,fontSize:13,lineHeight:1,
+            color:pct>=100?'#15803d':pct>=75?'#10B981':pct>=50?'#F59E0B':pct>0?'#E8471C':'#999'}}>
+            {pct}%
+          </div>
+          <div style={{marginTop:4,height:5,background:'#f0f0f0',borderRadius:99,overflow:'hidden'}}>
+            <div style={{height:'100%',width:pct+'%',borderRadius:99,transition:'width 0.6s',
+              background:pct>=100?'#15803d':pct>=75?'#10B981':pct>=50?'#F59E0B':pct>0?'#E8471C':'#ccc'}}/>
+          </div>
+        </>
+      }
+    </div>
+  );
+}
+
+function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdits,
+  onView, onEdit, onRequestEdit, onPayment, onDownload, onPrint, onDelete, onProjectMgmt, onVisitReport, onCompletion }) {
+  const [open, setOpen]   = React.useState(false);
+  const [pos,  setPos]    = React.useState({ top:0, left:0 });
+  const btnRef = React.useRef();
+
+  // Close on outside click only (no scroll listener — scroll was causing freezes)
+  React.useEffect(() => {
+    if (!open) return;
+    const close = (e) => {
+      if (btnRef.current && !btnRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  const toggle = (e) => {
+    e.stopPropagation();
+    if (!open) {
+      // Calculate position relative to viewport
+      const rect = btnRef.current.getBoundingClientRect();
+      const menuH = 280; // estimated menu height
+      // Flip up if not enough space below
+      const top = rect.bottom + menuH > window.innerHeight
+        ? rect.top - menuH - 4
+        : rect.bottom + 4;
+      setPos({ top, right: window.innerWidth - rect.right });
+    }
+    setOpen(o => !o);
+  };
+
+  const isBooked    = (q.project_status || 'Unbooked') === 'Booked';
+  const canEditQ    = canEdit(q);
+  const showReqEdit = isManager && isBooked && !canEditQ;
+
+  const Item = ({ icon, label, color = '#1a1a1a', onClick, sep }) => (
+    <button
+      onMouseDown={e => e.stopPropagation()}
+      onClick={(e) => { e.stopPropagation(); setOpen(false); onClick(); }}
+      style={{
+        display:'flex', alignItems:'center', gap:10,
+        width:'100%', padding:'9px 16px', background:'none',
+        border:'none', borderTop: sep ? '1px solid #f3f3f3' : 'none',
+        cursor:'pointer', textAlign:'left', fontSize:13,
+        color, fontFamily:"'DM Sans',sans-serif", fontWeight:500,
+      }}
+      onMouseEnter={e => e.currentTarget.style.background='#f8f8f8'}
+      onMouseLeave={e => e.currentTarget.style.background='none'}
+    >
+      <span style={{fontSize:15, width:22, textAlign:'center'}}>{icon}</span>
+      {label}
+    </button>
+  );
+
+  return (
+    <>
+      <button
+        ref={btnRef}
+        onClick={toggle}
+        style={{
+          display:'inline-flex', alignItems:'center', gap:5,
+          padding:'6px 13px',
+          background: open ? '#E8471C' : '#fff',
+          border:'1.5px solid ' + (open ? '#E8471C' : '#ddd'),
+          borderRadius:8, cursor:'pointer', fontSize:13,
+          fontWeight:600, color: open ? '#fff' : '#444',
+          fontFamily:"'DM Sans',sans-serif", transition:'all 0.15s',
+          whiteSpace:'nowrap', userSelect:'none',
+          boxShadow: open ? '0 2px 8px rgba(232,71,28,0.25)' : 'none',
+        }}
+      >
+        Actions
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none"
+          style={{transform: open ? 'rotate(180deg)' : 'rotate(0)',
+            transition:'transform 0.18s', flexShrink:0}}>
+          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+        </svg>
+      </button>
+
+      {open && ReactDOM.createPortal(
+        <div
+          onMouseDown={e => e.stopPropagation()}
+          style={{
+            position:'fixed',
+            top: pos.top,
+            right: pos.right,
+            background:'#fff',
+            border:'1px solid #e8e8e8',
+            borderRadius:12,
+            boxShadow:'0 12px 40px rgba(0,0,0,0.18)',
+            zIndex:99999,
+            minWidth:175,
+            overflow:'hidden',
+            animation:'ddFadeIn 0.14s ease',
+          }}
+        >
+          <style>{`@keyframes ddFadeIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}`}</style>
+          <Item icon="👁"  label="View"           color="#1D4ED8" onClick={onView} />
+          {canEditQ    && <Item icon="✏️" label="Edit"          color="#E8471C" onClick={onEdit} />}
+          {showReqEdit && <Item icon="🔓" label="Request Edit"  color="#B45309" onClick={onRequestEdit} />}
+          <Item icon="💳"  label="Record Payment"  color="#15803D" onClick={onPayment} />
+          {onProjectMgmt && <Item icon="📋" label="Project Mgmt"  color="#0369A1" onClick={onProjectMgmt} />}
+          <Item icon="📸" label="Visit Report"   color="#7C3AED" onClick={onVisitReport} />
+          <Item icon="📊" label="Completion %"   color="#15803D" onClick={onCompletion} />
+          <Item icon="⬇"   label="Download PDF"   color="#374151" onClick={onDownload} sep />
+          <Item icon="🖨"   label="Print PDF"      color="#374151" onClick={onPrint} />
+          {canDelete   && <Item icon="🗑" label="Delete"        color="#B91C1C" onClick={onDelete} sep />}
+        </div>,
+        document.body
+      )}
+    </>
+  );
+}
+
+/* ══ PAYMENT DELETE REQUEST — Manager sends, Admin approves ══ */
+
+function PaymentDeleteRequestModal({ txn, quotation, user, onClose, onSent }) {
+  const [reason,  setReason]  = useState('');
+  const [sending, setSending] = useState(false);
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:99999,
+      display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div style={{background:'#fff',borderRadius:18,padding:32,width:460,maxWidth:'100%',
+        boxShadow:'0 24px 60px rgba(0,0,0,0.25)'}} onClick={e=>e.stopPropagation()}>
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:18}}>
+          <div style={{width:44,height:44,background:'#FFF0F0',borderRadius:12,
+            display:'flex',alignItems:'center',justifyContent:'center',fontSize:22}}>🗑️</div>
+          <div>
+            <div style={{fontWeight:800,fontSize:16,color:'#1a1a1a'}}>Request Payment Deletion</div>
+            <div style={{fontSize:12,color:'#aaa',marginTop:2}}>
+              {quotation.site_name||quotation.customer_name}
+            </div>
+          </div>
+        </div>
+
+        {/* Payment summary */}
+        <div style={{background:'#FFF8F5',border:'1px solid rgba(232,71,28,0.2)',borderRadius:10,
+          padding:'12px 14px',marginBottom:16,fontSize:13}}>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+            <span style={{color:'#888'}}>Stage:</span>
+            <span style={{fontWeight:600}}>{txn.stage_name||'Payment'}</span>
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}>
+            <span style={{color:'#888'}}>Amount:</span>
+            <span style={{fontWeight:700,color:'#E8471C'}}>₹{Number(txn.paid_amount||0).toLocaleString('en-IN')}</span>
+          </div>
+          <div style={{display:'flex',justifyContent:'space-between'}}>
+            <span style={{color:'#888'}}>Date:</span>
+            <span style={{fontWeight:500}}>{txn.payment_date||'—'}</span>
+          </div>
+        </div>
+
+        <div style={{background:'#FEF9E6',border:'1px solid #FCD34D',borderRadius:9,
+          padding:'10px 14px',marginBottom:16,fontSize:12,color:'#92400e'}}>
+          🔒 You cannot delete payments directly. This request will be sent to admin for approval.
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <label style={{display:'block',fontSize:11,fontWeight:700,color:'#888',
+            textTransform:'uppercase',letterSpacing:0.5,marginBottom:6}}>
+            Reason for deletion *
+          </label>
+          <textarea autoFocus
+            placeholder="e.g. Wrong amount entered, duplicate entry, client changed payment method…"
+            value={reason} onChange={e=>setReason(e.target.value)}
+            style={{width:'100%',padding:'10px 13px',border:'1.5px solid #e8e8e8',
+              borderRadius:9,fontSize:14,fontFamily:'DM Sans,sans-serif',
+              outline:'none',resize:'vertical',minHeight:80,boxSizing:'border-box'}}
+            onFocus={e=>e.target.style.borderColor='#E8471C'}
+            onBlur={e=>e.target.style.borderColor='#e8e8e8'}
+          />
+        </div>
+
+        <div style={{display:'flex',gap:10}}>
+          <button
+            disabled={sending||!reason.trim()}
+            onClick={async()=>{
+              if(!reason.trim()){toast.error('Please enter a reason.');return;}
+              setSending(true);
+              try {
+                const { attachment_data, file_data, ...txnClean } = txn;
+                await api.post('/payment-delete-requests',{
+                  transaction_id: txn.id,
+                  quotation_id:   quotation.id,
+                  manager_name:   user.display||user.username,
+                  manager_user:   user.username,
+                  reason:         reason.trim(),
+                  txn_snapshot:   txnClean,
+                });
+                toast.success('Delete request sent to admin!');
+                onSent&&onSent();
+                onClose();
+              } catch(err){
+                toast.error(err?.response?.data?.message||'Failed to send request.');
+              }
+              setSending(false);
+            }}
+            style={{flex:1,padding:11,background:'#E8471C',color:'#fff',border:'none',
+              borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',
+              opacity:sending||!reason.trim()?0.6:1,fontFamily:'DM Sans,sans-serif'}}>
+            {sending?'Sending…':'📤 Send Delete Request'}
+          </button>
+          <button onClick={onClose}
+            style={{padding:'11px 18px',background:'#f5f5f5',border:'none',
+              borderRadius:10,fontWeight:600,fontSize:14,cursor:'pointer',color:'#666'}}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminPayDeletePanel({ onClose, onActioned }) {
+  const [requests, setRequests] = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [acting,   setActing]   = useState(null);
+  const [note,     setNote]     = useState({});
+
+  const load = useCallback(()=>{
+    setLoading(true);
+    api.get('/payment-delete-requests')
+      .then(r=>setRequests(r.data.data||[]))
+      .catch(()=>toast.error('Failed to load.'))
+      .finally(()=>setLoading(false));
+  },[]);
+
+  useEffect(()=>{load();},[load]);
+
+  const respond = async(id, status)=>{
+    setActing(id);
+    try {
+      await api.patch('/payment-delete-requests/'+id, {status, admin_note:note[id]||''});
+      toast.success(status==='Approved'?'✅ Approved! Payment deleted.':'❌ Request denied.');
+      onActioned&&onActioned();
+      load();
+    } catch {toast.error('Failed.');}
+    setActing(null);
+  };
+
+  const pending  = requests.filter(r=>r.status==='Pending');
+  const resolved = requests.filter(r=>r.status!=='Pending');
+
+  const SS = {
+    Pending:  {bg:'#FEF9E6',color:'#B45309',border:'#FCD34D'},
+    Approved: {bg:'#F0FDF4',color:'#15803D',border:'#86EFAC'},
+    Denied:   {bg:'#FFF0F0',color:'#B91C1C',border:'#FECACA'},
+  };
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:9999,
+      display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div style={{background:'#fff',borderRadius:18,width:580,maxWidth:'100%',
+        maxHeight:'88vh',display:'flex',flexDirection:'column',
+        boxShadow:'0 24px 60px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
+
+        <div style={{padding:'20px 24px',borderBottom:'1px solid #f0f0f0',
+          display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:18,color:'#1a1a1a',display:'flex',alignItems:'center',gap:8}}>
+              🗑️ Payment Delete Requests
+              {pending.length>0&&<span style={{background:'#E8471C',color:'#fff',borderRadius:20,
+                padding:'2px 9px',fontSize:12,fontWeight:700}}>{pending.length}</span>}
+            </div>
+            <div style={{fontSize:12,color:'#aaa',marginTop:2}}>Review manager requests to delete payment records</div>
+          </div>
+          <button onClick={onClose}
+            style={{background:'#f5f5f5',border:'none',borderRadius:8,width:32,height:32,
+              cursor:'pointer',fontSize:16,color:'#888'}}>✕</button>
+        </div>
+
+        <div style={{flex:1,overflowY:'auto',padding:'16px 24px'}}>
+          {loading ? (
+            <div style={{textAlign:'center',padding:40,color:'#aaa'}}>Loading…</div>
+          ) : requests.length===0 ? (
+            <div style={{textAlign:'center',padding:48}}>
+              <div style={{fontSize:36,marginBottom:10}}>📭</div>
+              <div style={{fontSize:15,color:'#aaa'}}>No payment delete requests yet.</div>
+            </div>
+          ) : (
+            <>
+              {pending.length>0&&(
+                <div style={{marginBottom:20}}>
+                  <div style={{fontSize:11,fontWeight:800,color:'#B45309',textTransform:'uppercase',
+                    letterSpacing:0.8,marginBottom:10}}>⏳ Pending ({pending.length})</div>
+                  {pending.map(r=>{
+                    let snap={};try{snap=JSON.parse(r.txn_snapshot||'{}');}catch{}
+                    return (
+                      <div key={r.id} style={{border:'1.5px solid #FCD34D',borderRadius:12,
+                        padding:'14px 16px',marginBottom:12,background:'#FFFBEB'}}>
+                        <div style={{marginBottom:10}}>
+                          <div style={{fontWeight:700,fontSize:14,color:'#1a1a1a'}}>
+                            {r.site_name||r.customer_name}
+                          </div>
+                          <div style={{fontSize:12,color:'#666',marginTop:3}}>
+                            👤 {r.manager_name} · {new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}
+                          </div>
+                        </div>
+                        {/* Payment details */}
+                        <div style={{background:'#fff',borderRadius:8,padding:'10px 12px',
+                          marginBottom:10,border:'1px solid #fde68a',fontSize:12}}>
+                          <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+                            <span><b>Stage:</b> {snap.stage_name||'—'}</span>
+                            <span><b>Amount:</b> <span style={{color:'#E8471C',fontWeight:700}}>₹{Number(snap.paid_amount||0).toLocaleString('en-IN')}</span></span>
+                            <span><b>Date:</b> {snap.payment_date||'—'}</span>
+                            <span><b>By:</b> {snap.received_by||'—'}</span>
+                          </div>
+                        </div>
+                        {r.reason&&(
+                          <div style={{padding:'8px 12px',background:'#fff',borderRadius:8,
+                            border:'1px solid #fde68a',fontSize:13,color:'#555',
+                            fontStyle:'italic',marginBottom:10}}>
+                            "{r.reason}"
+                          </div>
+                        )}
+                        <input placeholder="Optional note to manager…"
+                          value={note[r.id]||''}
+                          onChange={e=>setNote(n=>({...n,[r.id]:e.target.value}))}
+                          style={{width:'100%',padding:'8px 12px',border:'1px solid #e0e0e0',
+                            borderRadius:8,fontSize:13,fontFamily:'DM Sans,sans-serif',
+                            outline:'none',boxSizing:'border-box',marginBottom:10}} />
+                        <div style={{display:'flex',gap:8}}>
+                          <button disabled={acting===r.id} onClick={()=>respond(r.id,'Approved')}
+                            style={{flex:1,padding:9,background:'#10B981',color:'#fff',
+                              border:'none',borderRadius:8,fontWeight:700,fontSize:13,
+                              cursor:'pointer',opacity:acting===r.id?0.7:1}}>
+                            ✅ Approve & Delete
+                          </button>
+                          <button disabled={acting===r.id} onClick={()=>respond(r.id,'Denied')}
+                            style={{flex:1,padding:9,background:'#EF4444',color:'#fff',
+                              border:'none',borderRadius:8,fontWeight:700,fontSize:13,
+                              cursor:'pointer',opacity:acting===r.id?0.7:1}}>
+                            ❌ Deny
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {resolved.length>0&&(
+                <div>
+                  <div style={{fontSize:11,fontWeight:800,color:'#888',textTransform:'uppercase',
+                    letterSpacing:0.8,marginBottom:10}}>History ({resolved.length})</div>
+                  {resolved.map(r=>{
+                    let snap={};try{snap=JSON.parse(r.txn_snapshot||'{}');}catch{}
+                    const ss=SS[r.status]||SS.Denied;
+                    return (
+                      <div key={r.id} style={{border:`1px solid ${ss.border}`,borderRadius:10,
+                        padding:'12px 14px',marginBottom:8,background:ss.bg}}>
+                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                          <div>
+                            <div style={{fontWeight:600,fontSize:13,color:'#1a1a1a'}}>
+                              {r.site_name||r.customer_name}
+                              <span style={{marginLeft:8,fontSize:11,color:'#aaa'}}>
+                                ₹{Number(snap.paid_amount||0).toLocaleString('en-IN')} · by {r.manager_name}
+                              </span>
+                            </div>
+                            {r.admin_note&&<div style={{fontSize:12,color:'#666',marginTop:3}}>Note: {r.admin_note}</div>}
+                          </div>
+                          <span style={{padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:700,
+                            color:ss.color,background:'rgba(255,255,255,0.7)',border:`1px solid ${ss.border}`}}>
+                            {r.status}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   VISIT REPORT MODAL
+══════════════════════════════════════════════════════════════ */
+function VisitReportModal({ quotation, user, onClose }) {
+  const [tab,         setTab]         = React.useState('list'); // 'list'|'add'
+  const [reports,     setReports]     = React.useState([]);
+  const [loading,     setLoading]     = React.useState(true);
+  const [saving,      setSaving]      = React.useState(false);
+  const [form,        setForm]        = React.useState({
+    visit_date: new Date().toISOString().slice(0,10),
+    visit_time: new Date().toTimeString().slice(0,5),
+    reported_by: user?.display || user?.username || '',
+    notes: '',
+  });
+  const [files,       setFiles]       = React.useState([]);
+  const [fileError,   setFileError]   = React.useState('');
+  const [viewFile,    setViewFile]    = React.useState(null);
+  const fileRef = React.useRef();
+
+  const load = React.useCallback(() => {
+    setLoading(true);
+    api.get('/visit-reports', { params: { quotation_id: quotation.id } })
+      .then(r => setReports(r.data.data || []))
+      .catch(() => toast.error('Failed to load reports.'))
+      .finally(() => setLoading(false));
+  }, [quotation.id]);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  const handleFileAdd = async (e) => {
+    const selected = Array.from(e.target.files);
+    setFileError('');
+    const readers = await Promise.all(selected.map(f => new Promise((res, rej) => {
+      if (f.size > 10 * 1024 * 1024) { rej(new Error(f.name + ' exceeds 10MB')); return; }
+      const r = new FileReader();
+      r.onload = () => res({ name: f.name, type: f.type, data: r.result });
+      r.onerror = rej;
+      r.readAsDataURL(f);
+    }))).catch(err => { setFileError(err.message); return null; });
+    if (readers) setFiles(prev => [...prev, ...readers]);
+    e.target.value = '';
+  };
+
+  const removeFile = (idx) => setFiles(prev => prev.filter((_,i) => i !== idx));
+
+  const handleSave = async () => {
+    if (!form.visit_date) { toast.error('Visit date is required.'); return; }
+    if (files.length < 3) { setFileError('Minimum 3 files are required.'); return; }
+    setSaving(true);
+    try {
+      await api.post('/visit-reports', {
+        quotation_id: quotation.id,
+        visit_date:   form.visit_date,
+        visit_time:   form.visit_time,
+        reported_by:  form.reported_by,
+        notes:        form.notes,
+        files,
+      });
+      toast.success('Visit report saved!');
+      setForm({ visit_date: new Date().toISOString().slice(0,10), visit_time: new Date().toTimeString().slice(0,5), reported_by: user?.display||'', notes:'' });
+      setFiles([]);
+      setTab('list');
+      load();
+    } catch (err) { toast.error(err?.response?.data?.message || 'Failed to save.'); }
+    setSaving(false);
+  };
+
+  const handleDeleteReport = async (id) => {
+    if (!window.confirm('Delete this visit report?')) return;
+    try {
+      await api.delete('/visit-reports/' + id);
+      toast.success('Deleted.');
+      load();
+    } catch { toast.error('Failed.'); }
+  };
+
+  const handleViewFile = async (fileId, fileName, fileType) => {
+    try {
+      const r = await api.get('/visit-report-files/' + fileId);
+      setViewFile({ name: fileName, type: fileType, data: r.data.data.file_data });
+    } catch { toast.error('Failed to load file.'); }
+  };
+
+  const fileIcon = (type) => type?.startsWith('image/') ? '🖼️' : type==='application/pdf' ? '📄' : '📎';
+
+  const S = {
+    overlay: { position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:16 },
+    modal:   { background:'#fff',borderRadius:18,width:'100%',maxWidth:780,maxHeight:'90vh',display:'flex',flexDirection:'column',boxShadow:'0 24px 60px rgba(0,0,0,0.25)',fontFamily:"'DM Sans',sans-serif" },
+    header:  { padding:'18px 24px',borderBottom:'1px solid #f0f0f0',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0 },
+    body:    { flex:1,overflowY:'auto',padding:'20px 24px' },
+    label:   { display:'block',fontSize:11,fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:0.5,marginBottom:5 },
+    input:   { width:'100%',padding:'9px 12px',border:'1.5px solid #e8e8e8',borderRadius:8,fontSize:13,fontFamily:"'DM Sans',sans-serif",outline:'none',boxSizing:'border-box' },
+  };
+
+  return (
+    <div style={S.overlay} onClick={onClose}>
+      {/* File preview modal */}
+      {viewFile && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.8)',zIndex:99999,display:'flex',alignItems:'center',justifyContent:'center',padding:20}} onClick={()=>setViewFile(null)}>
+          <div style={{background:'#fff',borderRadius:16,padding:20,maxWidth:700,width:'100%',maxHeight:'85vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}>
+              <div style={{fontWeight:700,fontSize:14}}>{viewFile.name}</div>
+              <div style={{display:'flex',gap:8}}>
+                <a href={viewFile.data} download={viewFile.name} style={{padding:'5px 12px',background:'#E8471C',color:'#fff',borderRadius:7,textDecoration:'none',fontSize:12,fontWeight:700}}>⬇ Download</a>
+                <button onClick={()=>setViewFile(null)} style={{padding:'5px 10px',background:'#f0f0f0',border:'none',borderRadius:7,cursor:'pointer'}}>✕</button>
+              </div>
+            </div>
+            {viewFile.type?.startsWith('image/') ? <img src={viewFile.data} alt={viewFile.name} style={{width:'100%',borderRadius:8}}/> :
+             viewFile.type==='application/pdf' ? <iframe src={viewFile.data} style={{width:'100%',height:'60vh',border:'none',borderRadius:8}} title="PDF"/> :
+             <div style={{textAlign:'center',padding:40,color:'#aaa'}}><div style={{fontSize:48,marginBottom:12}}>📄</div><a href={viewFile.data} download={viewFile.name} style={{color:'#E8471C',fontWeight:700}}>Download File</a></div>}
+          </div>
+        </div>
+      )}
+
+      <div style={S.modal} onClick={e=>e.stopPropagation()}>
+        {/* Header */}
+        <div style={S.header}>
+          <div>
+            <div style={{fontWeight:800,fontSize:17,color:'#1a1a1a'}}>📸 Visit Reports</div>
+            <div style={{fontSize:12,color:'#aaa',marginTop:2}}>{quotation.site_name||quotation.customer_name}</div>
+          </div>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            {tab==='list' && <button onClick={()=>setTab('add')} style={{padding:'7px 16px',background:'#E8471C',color:'#fff',border:'none',borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer'}}>+ Add Report</button>}
+            <button onClick={onClose} style={{background:'#f5f5f5',border:'none',borderRadius:8,width:32,height:32,cursor:'pointer',fontSize:16,color:'#888'}}>✕</button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div style={{display:'flex',borderBottom:'2px solid #f0f0f0',flexShrink:0}}>
+          {[{id:'list',label:`📋 All Reports (${reports.length})`},{id:'add',label:'➕ Add Report'}].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)}
+              style={{padding:'10px 20px',border:'none',background:'none',cursor:'pointer',
+                fontWeight:tab===t.id?700:500,color:tab===t.id?'#E8471C':'#888',
+                borderBottom:tab===t.id?'2px solid #E8471C':'2px solid transparent',
+                fontSize:13,fontFamily:"'DM Sans',sans-serif",marginBottom:-2}}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={S.body}>
+          {/* LIST */}
+          {tab==='list' && (
+            loading ? <div style={{textAlign:'center',padding:40,color:'#aaa'}}>Loading…</div> :
+            reports.length===0 ? (
+              <div style={{textAlign:'center',padding:48}}>
+                <div style={{fontSize:40,marginBottom:10}}>📸</div>
+                <div style={{fontSize:15,fontWeight:700,color:'#555',marginBottom:6}}>No visit reports yet</div>
+                <div style={{fontSize:13,color:'#aaa',marginBottom:20}}>Add your first visit report with photos/documents</div>
+                <button onClick={()=>setTab('add')} style={{padding:'10px 24px',background:'#E8471C',color:'#fff',border:'none',borderRadius:9,fontWeight:700,cursor:'pointer'}}>+ Add First Report</button>
+              </div>
+            ) : (
+              <div style={{display:'flex',flexDirection:'column',gap:14}}>
+                {reports.map(r => (
+                  <div key={r.id} style={{border:'1px solid #eee',borderRadius:12,overflow:'hidden',boxShadow:'0 2px 8px rgba(0,0,0,0.05)'}}>
+                    <div style={{padding:'12px 16px',background:'#fafafa',borderBottom:'1px solid #eee',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                      <div>
+                        <div style={{fontWeight:700,fontSize:14,color:'#1a1a1a',display:'flex',alignItems:'center',gap:8}}>
+                          📅 {new Date(r.visit_date).toLocaleDateString('en-IN',{day:'2-digit',month:'long',year:'numeric'})}
+                          {r.visit_time && <span style={{fontSize:12,color:'#888',fontWeight:400}}>🕐 {r.visit_time}</span>}
+                        </div>
+                        <div style={{fontSize:12,color:'#aaa',marginTop:2}}>by {r.reported_by||'—'} · {new Date(r.created_at).toLocaleDateString('en-IN')}</div>
+                      </div>
+                      {(user?.role==='admin'||user?.role==='manager') && (
+                        <button onClick={()=>handleDeleteReport(r.id)}
+                          style={{background:'#FFF0F0',border:'none',borderRadius:7,padding:'5px 10px',cursor:'pointer',color:'#B91C1C',fontSize:12}}>🗑</button>
+                      )}
+                    </div>
+                    {r.notes && <div style={{padding:'10px 16px',fontSize:13,color:'#555',background:'#fffbeb',borderBottom:'1px solid #fef3c7'}}>📝 {r.notes}</div>}
+                    {r.files?.length>0 && (
+                      <div style={{padding:'12px 16px',display:'flex',gap:10,flexWrap:'wrap'}}>
+                        {r.files.map(f => (
+                          <button key={f.id} onClick={()=>handleViewFile(f.id,f.file_name,f.file_type)}
+                            style={{display:'flex',alignItems:'center',gap:6,padding:'6px 12px',
+                              background:'#fff4f0',border:'1.5px solid rgba(232,71,28,0.2)',borderRadius:8,
+                              cursor:'pointer',fontSize:12,fontWeight:600,color:'#E8471C'}}>
+                            {fileIcon(f.file_type)} {f.file_name?.length>18?f.file_name.slice(0,18)+'…':f.file_name||'File'}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )
+          )}
+
+          {/* ADD FORM */}
+          {tab==='add' && (
+            <div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:14}}>
+                <div>
+                  <label style={S.label}>Visit Date *</label>
+                  <input style={S.input} type="date" value={form.visit_date} onChange={e=>setForm(f=>({...f,visit_date:e.target.value}))} />
+                </div>
+                <div>
+                  <label style={S.label}>Visit Time</label>
+                  <input style={S.input} type="time" value={form.visit_time} onChange={e=>setForm(f=>({...f,visit_time:e.target.value}))} />
+                </div>
+                <div>
+                  <label style={S.label}>Reported By</label>
+                  <input style={S.input} placeholder="Your name" value={form.reported_by} onChange={e=>setForm(f=>({...f,reported_by:e.target.value}))} />
+                </div>
+              </div>
+              <div style={{marginBottom:14}}>
+                <label style={S.label}>Notes / Observations</label>
+                <textarea style={{...S.input,minHeight:72,resize:'vertical'}} placeholder="Site visit observations, issues found, work progress…" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))} />
+              </div>
+
+              {/* File upload — min 3 required */}
+              <div style={{marginBottom:14}}>
+                <label style={S.label}>
+                  Attachments <span style={{color:'#E8471C'}}>* minimum 3 required</span>
+                  <span style={{marginLeft:8,fontSize:10,color:files.length>=3?'#15803d':'#E8471C',fontWeight:700,background:files.length>=3?'#f0fdf4':'#fff8f5',padding:'2px 8px',borderRadius:10}}>
+                    {files.length}/3+ files
+                  </span>
+                </label>
+
+                {/* File list */}
+                {files.length>0 && (
+                  <div style={{display:'flex',flexWrap:'wrap',gap:8,marginBottom:10}}>
+                    {files.map((f,i) => (
+                      <div key={i} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',
+                        background:'#fff4f0',border:'1.5px solid rgba(232,71,28,0.2)',borderRadius:8,fontSize:12}}>
+                        {fileIcon(f.type)}
+                        <span style={{maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:600,color:'#E8471C'}}>{f.name}</span>
+                        <button onClick={()=>removeFile(i)} style={{background:'none',border:'none',cursor:'pointer',color:'#aaa',fontSize:14,padding:0,lineHeight:1}}>✕</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Drop zone */}
+                <div onClick={()=>fileRef.current?.click()}
+                  style={{border:`2px dashed ${fileError?'#EF4444':'#e0e0e0'}`,borderRadius:10,padding:'20px',
+                    textAlign:'center',cursor:'pointer',background:'#fafafa',transition:'all 0.2s'}}
+                  onMouseEnter={e=>e.currentTarget.style.borderColor='#E8471C'}
+                  onMouseLeave={e=>e.currentTarget.style.borderColor=fileError?'#EF4444':'#e0e0e0'}>
+                  <div style={{fontSize:28,marginBottom:6}}>📎</div>
+                  <div style={{fontSize:13,color:'#666',fontWeight:500}}>Click to add files (photos, PDFs, docs)</div>
+                  <div style={{fontSize:11,color:'#aaa',marginTop:3}}>Max 10MB per file · Add at least 3</div>
+                </div>
+                {fileError && <div style={{marginTop:6,fontSize:12,color:'#EF4444',fontWeight:600}}>⚠ {fileError}</div>}
+                <input ref={fileRef} type="file" multiple style={{display:'none'}}
+                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                  onChange={handleFileAdd} />
+              </div>
+
+              {/* Progress indicator */}
+              <div style={{marginBottom:18,padding:'10px 14px',background:files.length>=3?'#f0fdf4':'#fff8f5',
+                borderRadius:9,border:`1px solid ${files.length>=3?'#86efac':'rgba(232,71,28,0.2)'}`,
+                display:'flex',alignItems:'center',gap:10}}>
+                {[1,2,3,4].map(n => (
+                  <div key={n} style={{display:'flex',alignItems:'center',gap:4,fontSize:12,
+                    color:files.length>=n?'#15803d':'#aaa',fontWeight:files.length>=n?700:400}}>
+                    <span style={{width:20,height:20,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,
+                      background:files.length>=n?'#15803d':'#e0e0e0',color:files.length>=n?'#fff':'#888'}}>
+                      {files.length>=n?'✓':n}
+                    </span>
+                    File {n}{n===3?' (min)':n===4?' (recommended)':''}
+                  </div>
+                ))}
+              </div>
+
+              <div style={{display:'flex',gap:10}}>
+                <button onClick={handleSave} disabled={saving||files.length<3}
+                  style={{flex:1,padding:12,background:'#E8471C',color:'#fff',border:'none',borderRadius:10,
+                    fontWeight:700,fontSize:14,cursor:saving||files.length<3?'not-allowed':'pointer',
+                    opacity:saving||files.length<3?0.6:1}}>
+                  {saving?'Saving…':'✅ Save Visit Report'}
+                </button>
+                <button onClick={()=>setTab('list')} style={{padding:'12px 18px',background:'#f5f5f5',border:'none',borderRadius:10,fontWeight:600,cursor:'pointer',color:'#666'}}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
+   COMPLETION STATUS MODAL
+══════════════════════════════════════════════════════════════ */
+function CompletionStatusModal({ quotation, user, onClose }) {
+  const STAGES = [
+    { key:'design',       label:'Design',           icon:'🎨' },
+    { key:'electrical',   label:'Electrical',       icon:'⚡' },
+    { key:'false_ceiling',label:'False Ceiling',    icon:'🏗️' },
+    { key:'carcase',      label:'Carcase Fitting',  icon:'🪵' },
+    { key:'door_fitting', label:'Door Fitting',     icon:'🚪' },
+    { key:'accessories',  label:'Accessories Fitting',icon:'🔩'},
+    { key:'deep_cleaning',label:'Deep Cleaning',    icon:'🧹' },
+    { key:'furnishing',   label:'Furnishing & Cleaning',icon:'🛋️'},
+  ];
+
+  const [pct,        setPct]        = React.useState(0);
+  const [notes,      setNotes]      = React.useState('');
+  const [stageDates, setStageDates] = React.useState({});
+  const [loading,    setLoading]    = React.useState(true);
+  const [saving,     setSaving]     = React.useState(false);
+  const [dragging,   setDragging]   = React.useState(false);
+  const trackRef = React.useRef();
+
+  React.useEffect(() => {
+    api.get('/completion-status/' + quotation.id)
+      .then(r => {
+        const d = r.data.data || {};
+        setPct(d.percentage || 0);
+        setNotes(d.notes || '');
+        setStageDates(d.stage_dates || {});
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [quotation.id]);
+
+  const setStage = (key, field, val) =>
+    setStageDates(prev => ({ ...prev, [key]: { ...(prev[key]||{}), [field]: val } }));
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.post('/completion-status', {
+        quotation_id: quotation.id,
+        percentage:   pct,
+        notes,
+        stage_dates:  stageDates,
+        updated_by:   user?.display || user?.username || '',
+      });
+      toast.success(`Saved — ${pct}% complete!`);
+      onClose();
+    } catch { toast.error('Failed to save.'); }
+    setSaving(false);
+  };
+
+  const dragHandler = (e) => {
+    e.preventDefault();
+    setDragging(true);
+    const calc = (ev) => {
+      if (!trackRef.current) return;
+      const rect = trackRef.current.getBoundingClientRect();
+      setPct(Math.round(Math.max(0, Math.min((ev.clientX - rect.left) / rect.width, 1)) * 100));
+    };
+    calc(e);
+    const move = ev => calc(ev);
+    const up   = () => { setDragging(false); document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  };
+
+  const color = pct>=100?'#15803d':pct>=75?'#10B981':pct>=50?'#F59E0B':pct>=25?'#E8471C':'#EF4444';
+  const label = pct>=100?'🎉 Completed!':pct>=75?'Almost Done':pct>=50?'Halfway There':pct>=25?'In Progress':'Just Started';
+
+  if (loading) return null;
+
+  const IS = { padding:'6px 8px', border:'1.5px solid #e8e8e8', borderRadius:7, fontSize:12,
+    fontFamily:"'DM Sans',sans-serif", outline:'none', background:'#fff', width:'100%', boxSizing:'border-box' };
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:9999,
+      display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={onClose}>
+      <div style={{background:'#fff',borderRadius:18,width:'100%',maxWidth:620,
+        maxHeight:'92vh',display:'flex',flexDirection:'column',
+        boxShadow:'0 24px 60px rgba(0,0,0,0.25)',fontFamily:"'DM Sans',sans-serif"}}
+        onClick={e=>e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{padding:'18px 24px',borderBottom:'1px solid #f0f0f0',flexShrink:0,
+          display:'flex',alignItems:'flex-start',justifyContent:'space-between'}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:18,color:'#1a1a1a'}}>📊 Completion Status</div>
+            <div style={{fontSize:12,color:'#aaa',marginTop:3}}>{quotation.site_name||quotation.customer_name}</div>
+          </div>
+          <button onClick={onClose} style={{background:'#f5f5f5',border:'none',borderRadius:8,
+            width:32,height:32,cursor:'pointer',fontSize:16,color:'#888',flexShrink:0}}>✕</button>
+        </div>
+
+        <div style={{flex:1,overflowY:'auto',padding:'20px 24px'}}>
+
+          {/* Stage dates table */}
+          <div style={{marginBottom:24}}>
+            <div style={{fontSize:11,fontWeight:800,color:'#888',textTransform:'uppercase',
+              letterSpacing:0.8,marginBottom:12}}>Work Stages — Start & End Dates</div>
+            <div style={{border:'1px solid #f0f0f0',borderRadius:12,overflow:'hidden'}}>
+              {/* Table header */}
+              <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',
+                background:'#fafafa',borderBottom:'2px solid #E8471C',padding:'8px 14px',gap:8}}>
+                <div style={{fontSize:10,fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:0.5}}>Stage</div>
+                <div style={{fontSize:10,fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:0.5}}>Start Date</div>
+                <div style={{fontSize:10,fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:0.5}}>End Date</div>
+              </div>
+              {/* Stage rows */}
+              {STAGES.map((s, i) => {
+                const sd = stageDates[s.key] || {};
+                const done = sd.start && sd.end;
+                return (
+                  <div key={s.key} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',
+                    padding:'10px 14px',gap:8,alignItems:'center',
+                    background: i%2===0 ? '#fff' : '#fafafa',
+                    borderBottom: i < STAGES.length-1 ? '1px solid #f5f5f5' : 'none'}}>
+                    {/* Stage label */}
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:16}}>{s.icon}</span>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:600,color:'#1a1a1a'}}>{s.label}</div>
+                        {done && (
+                          <div style={{fontSize:10,color:'#15803d',fontWeight:600,marginTop:1}}>✓ Dates set</div>
+                        )}
+                      </div>
+                    </div>
+                    {/* Start date */}
+                    <div>
+                      <input type="date" value={sd.start||''} style={IS}
+                        onChange={e=>setStage(s.key,'start',e.target.value)}
+                        onFocus={e=>e.target.style.borderColor='#E8471C'}
+                        onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
+                    </div>
+                    {/* End date */}
+                    <div>
+                      <input type="date" value={sd.end||''} style={IS}
+                        onChange={e=>setStage(s.key,'end',e.target.value)}
+                        onFocus={e=>e.target.style.borderColor='#E8471C'}
+                        onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Overall completion drag bar */}
+          <div style={{background:'#fff8f5',border:'1.5px solid rgba(232,71,28,0.2)',
+            borderRadius:14,padding:'18px 20px',marginBottom:20}}>
+            <div style={{fontSize:11,fontWeight:800,color:'#888',textTransform:'uppercase',
+              letterSpacing:0.8,marginBottom:14}}>Overall Project Completion</div>
+
+            {/* Big pct */}
+            <div style={{textAlign:'center',marginBottom:16}}>
+              <div style={{fontSize:56,fontWeight:800,color,lineHeight:1,transition:'color 0.3s'}}>{pct}%</div>
+              <div style={{fontSize:13,fontWeight:700,color,marginTop:4}}>{label}</div>
+            </div>
+
+            {/* Track */}
+            <div style={{marginBottom:12}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#ccc',marginBottom:6}}>
+                <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+              </div>
+              <div ref={trackRef} onMouseDown={dragHandler}
+                onClick={e=>{ const rect=trackRef.current.getBoundingClientRect(); setPct(Math.round(Math.max(0,Math.min((e.clientX-rect.left)/rect.width,1))*100)); }}
+                style={{height:28,background:'#f0f0f0',borderRadius:99,cursor:'pointer',
+                  position:'relative',userSelect:'none',border:'2px solid #e0e0e0'}}>
+                <div style={{position:'absolute',left:0,top:0,bottom:0,borderRadius:99,
+                  width:pct+'%',background:`linear-gradient(90deg,${color},${color}cc)`,
+                  transition:dragging?'none':'width 0.3s',minWidth:pct>0?28:0}}/>
+                {[25,50,75].map(m=>(
+                  <div key={m} style={{position:'absolute',left:m+'%',top:'50%',
+                    transform:'translate(-50%,-50%)',width:2,height:14,
+                    background:pct>=m?'rgba(255,255,255,0.7)':'#ccc',borderRadius:99}}/>
+                ))}
+                <div onMouseDown={dragHandler}
+                  style={{position:'absolute',left:pct+'%',top:'50%',
+                    transform:'translate(-50%,-50%)',width:30,height:30,
+                    background:'#fff',borderRadius:'50%',border:`3px solid ${color}`,
+                    boxShadow:'0 2px 8px rgba(0,0,0,0.2)',cursor:'grab',
+                    transition:dragging?'none':'left 0.15s'}}/>
+              </div>
+            </div>
+
+            {/* Presets */}
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:14}}>
+              {[0,10,25,50,75,90,100].map(v=>(
+                <button key={v} onClick={()=>setPct(v)}
+                  style={{padding:'4px 10px',border:`1.5px solid ${pct===v?color:'#e0e0e0'}`,
+                    borderRadius:6,background:pct===v?color:'#fff',
+                    color:pct===v?'#fff':'#555',fontSize:12,fontWeight:600,cursor:'pointer'}}>
+                  {v}%
+                </button>
+              ))}
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#888',
+                textTransform:'uppercase',letterSpacing:0.5,marginBottom:5}}>Notes</label>
+              <textarea value={notes} onChange={e=>setNotes(e.target.value)}
+                placeholder="e.g. Carpentry 80% done, painting pending…"
+                style={{width:'100%',padding:'9px 12px',border:'1.5px solid #e8e8e8',
+                  borderRadius:8,fontSize:13,fontFamily:"'DM Sans',sans-serif",
+                  outline:'none',resize:'vertical',minHeight:60,boxSizing:'border-box'}}
+                onFocus={e=>e.target.style.borderColor='#E8471C'}
+                onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
+            </div>
+          </div>
+
+        </div>
+
+        {/* Footer */}
+        <div style={{padding:'14px 24px',borderTop:'1px solid #f0f0f0',flexShrink:0,
+          display:'flex',gap:10}}>
+          <button onClick={handleSave} disabled={saving}
+            style={{flex:1,padding:12,background:color,color:'#fff',border:'none',
+              borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',
+              opacity:saving?0.7:1,transition:'background 0.3s'}}>
+            {saving?'Saving…':`✅ Save — ${pct}% Complete`}
+          </button>
+          <button onClick={onClose}
+            style={{padding:'12px 20px',background:'#f5f5f5',border:'none',
+              borderRadius:10,fontWeight:600,cursor:'pointer',color:'#666',fontSize:14}}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminRequestsPanel({ onClose, onApproved }) {
+  const [requests, setRequests]  = useState([]);
+  const [loading,  setLoading]   = useState(true);
+  const [acting,   setActing]    = useState(null);
+  const [note,     setNote]      = useState({});
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api.get('/edit-requests')
+      .then(r => setRequests(r.data.data || []))
+      .catch(() => toast.error('Failed to load requests.'))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const respond = async (id, status) => {
+    setActing(id);
+    try {
+      await api.patch('/edit-requests/' + id, { status, admin_note: note[id] || '' });
+      toast.success(status === 'Approved' ? '✅ Request approved! Manager can now edit.' : '❌ Request denied.');
+      if (status === 'Approved') onApproved && onApproved();
+      load();
+    } catch { toast.error('Failed.'); }
+    setActing(null);
+  };
+
+  const pending  = requests.filter(r => r.status === 'Pending');
+  const resolved = requests.filter(r => r.status !== 'Pending');
+
+  const statusStyle = {
+    Pending:  { bg:'#FEF9E6', color:'#B45309', border:'#FCD34D' },
+    Approved: { bg:'#F0FDF4', color:'#15803D', border:'#86EFAC' },
+    Denied:   { bg:'#FFF0F0', color:'#B91C1C', border:'#FECACA' },
+  };
+
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',zIndex:9999,
+      display:'flex',alignItems:'center',justifyContent:'center',padding:20}}>
+      <div style={{background:'#fff',borderRadius:18,width:600,maxWidth:'100%',
+        maxHeight:'88vh',display:'flex',flexDirection:'column',
+        boxShadow:'0 24px 60px rgba(0,0,0,0.2)'}}
+        onClick={e=>e.stopPropagation()}>
+        {/* Header */}
+        <div style={{padding:'20px 24px',borderBottom:'1px solid #f0f0f0',
+          display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}}>
+          <div>
+            <div style={{fontWeight:800,fontSize:18,color:'#1a1a1a',display:'flex',alignItems:'center',gap:8}}>
+              📋 Edit Permission Requests
+              {pending.length > 0 && (
+                <span style={{background:'#E8471C',color:'#fff',borderRadius:20,
+                  padding:'2px 9px',fontSize:12,fontWeight:700}}>{pending.length}</span>
+              )}
+            </div>
+            <div style={{fontSize:12,color:'#aaa',marginTop:2}}>Review manager requests to edit booked projects</div>
+          </div>
+          <button onClick={onClose}
+            style={{background:'#f5f5f5',border:'none',borderRadius:8,width:32,height:32,
+              cursor:'pointer',fontSize:16,color:'#888'}}>✕</button>
+        </div>
+
+        <div style={{flex:1,overflowY:'auto',padding:'16px 24px'}}>
+          {loading ? (
+            <div style={{textAlign:'center',padding:40,color:'#aaa'}}>Loading requests…</div>
+          ) : requests.length === 0 ? (
+            <div style={{textAlign:'center',padding:48}}>
+              <div style={{fontSize:36,marginBottom:10}}>📭</div>
+              <div style={{fontSize:15,color:'#aaa'}}>No edit requests yet.</div>
+            </div>
+          ) : (
+            <>
+              {/* Pending */}
+              {pending.length > 0 && (
+                <div style={{marginBottom:20}}>
+                  <div style={{fontSize:11,fontWeight:800,color:'#B45309',textTransform:'uppercase',
+                    letterSpacing:0.8,marginBottom:10}}>⏳ Pending ({pending.length})</div>
+                  {pending.map(r => (
+                    <div key={r.id} style={{border:'1.5px solid #FCD34D',borderRadius:12,
+                      padding:'14px 16px',marginBottom:10,background:'#FFFBEB'}}>
+                      <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:10}}>
+                        <div>
+                          <div style={{fontWeight:700,fontSize:14,color:'#1a1a1a'}}>
+                            {r.site_name || r.customer_name}
+                            <span style={{marginLeft:8,fontSize:11,color:'#aaa',fontWeight:500}}>
+                              #{r.qid || r.quotation_id}
+                            </span>
+                          </div>
+                          <div style={{fontSize:12,color:'#666',marginTop:3}}>
+                            👤 {r.manager_name} ({r.manager_user}) ·{' '}
+                            {new Date(r.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'})}
+                          </div>
+                          {r.reason && (
+                            <div style={{marginTop:8,padding:'8px 12px',background:'#fff',
+                              borderRadius:8,border:'1px solid #fde68a',fontSize:13,color:'#555',
+                              fontStyle:'italic'}}>
+                              "{r.reason}"
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{marginBottom:8}}>
+                        <input
+                          placeholder="Optional note to manager (shown on deny/approve)…"
+                          value={note[r.id]||''}
+                          onChange={e=>setNote(n=>({...n,[r.id]:e.target.value}))}
+                          style={{width:'100%',padding:'8px 12px',border:'1px solid #e0e0e0',
+                            borderRadius:8,fontSize:13,fontFamily:'DM Sans,sans-serif',
+                            outline:'none',boxSizing:'border-box'}}
+                        />
+                      </div>
+                      <div style={{display:'flex',gap:8}}>
+                        <button disabled={acting===r.id}
+                          onClick={()=>respond(r.id,'Approved')}
+                          style={{flex:1,padding:'9px',background:'#10B981',color:'#fff',
+                            border:'none',borderRadius:8,fontWeight:700,fontSize:13,
+                            cursor:'pointer',opacity:acting===r.id?0.7:1}}>
+                          ✅ Approve
+                        </button>
+                        <button disabled={acting===r.id}
+                          onClick={()=>respond(r.id,'Denied')}
+                          style={{flex:1,padding:'9px',background:'#EF4444',color:'#fff',
+                            border:'none',borderRadius:8,fontWeight:700,fontSize:13,
+                            cursor:'pointer',opacity:acting===r.id?0.7:1}}>
+                          ❌ Deny
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* Resolved */}
+              {resolved.length > 0 && (
+                <div>
+                  <div style={{fontSize:11,fontWeight:800,color:'#888',textTransform:'uppercase',
+                    letterSpacing:0.8,marginBottom:10}}>History ({resolved.length})</div>
+                  {resolved.map(r => {
+                    const ss = statusStyle[r.status] || statusStyle.Denied;
+                    return (
+                      <div key={r.id} style={{border:`1px solid ${ss.border}`,borderRadius:10,
+                        padding:'12px 14px',marginBottom:8,background:ss.bg}}>
+                        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+                          <div>
+                            <div style={{fontWeight:600,fontSize:13,color:'#1a1a1a'}}>
+                              {r.site_name || r.customer_name}
+                              <span style={{marginLeft:8,fontSize:11,color:'#aaa'}}>
+                                by {r.manager_name}
+                              </span>
+                            </div>
+                            {r.admin_note && <div style={{fontSize:12,color:'#666',marginTop:3}}>Note: {r.admin_note}</div>}
+                          </div>
+                          <span style={{padding:'3px 10px',borderRadius:20,fontSize:11,
+                            fontWeight:700,color:ss.color,background:'rgba(255,255,255,0.7)',
+                            border:`1px solid ${ss.border}`}}>
+                            {r.status}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 import { pdf } from '@react-pdf/renderer';
 import { QuotationPDF } from '../components/QuotationPDF';
 import { DEFAULT_ROOMS, calcArea, calcTotal } from '../utils/roomData';
 import { printQuotation } from '../utils/printQuotation';
+import ProjectManagement from '../components/ProjectManagement';
 import './QuotationList.css';
 
 const LOGO_URL = 'https://img1.wsimg.com/isteam/ip/e7e3142b-3f26-4173-bc29-b2315178edb8/DI%20logo%20(2).png/:/rs=w:559,h:192,cg:true,m/cr=w:559,h:192/qt=q:95';
@@ -526,160 +1732,203 @@ function generateReceipt(txn, quotation, allTransactions=[]) {
   <meta charset="UTF-8">
   <title>Receipt ${rNo}</title>
   <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family:'Arial',sans-serif; font-size:12px; background:#e0e0e0; padding:24px; display:flex; flex-direction:column; align-items:center; }
+    *{margin:0;padding:0;box-sizing:border-box;}
+    body{font-family:Arial,sans-serif;font-size:12px;background:#e8e8e8;padding:30px;display:flex;justify-content:center;}
+    .page{background:#fff;width:700px;border:1px solid #bbb;box-shadow:0 4px 20px rgba(0,0,0,0.15);}
 
-    .receipt-block {
-      background:#fff;
-      width:680px;
-      border:1.5px solid #bbb;
-      margin-bottom:0;
-    }
+    /* HEADER */
+    .hdr{display:flex;align-items:stretch;border-bottom:3px solid #E8471C;}
+    .hdr-logo-col{padding:16px 20px;display:flex;align-items:center;gap:10px;flex:1;border-right:1px solid #eee;}
+    .r-logo{height:48px;width:auto;}
+    .co-info .co-name{font-size:17px;font-weight:900;color:#1A1A1A;letter-spacing:0.5px;}
+    .co-info .co-addr{font-size:9.5px;color:#666;margin-top:3px;}
+    .co-info .co-gst{font-size:10px;font-weight:700;color:#E8471C;margin-top:2px;letter-spacing:0.3px;}
+    .hdr-title-col{background:#1A1A1A;padding:16px 22px;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;min-width:190px;}
+    .r-title{font-size:20px;font-weight:900;color:#fff;letter-spacing:1px;text-transform:uppercase;line-height:1.1;}
+    .r-title span{color:#E8471C;}
+    .r-sub{font-size:8.5px;color:#888;letter-spacing:0.8px;text-transform:uppercase;margin-top:3px;}
+    .r-badge{margin-top:8px;background:#E8471C;color:#fff;font-size:10px;font-weight:800;padding:3px 10px;border-radius:3px;letter-spacing:0.5px;}
 
-    .r-title-row {
-      display:flex; align-items:center; justify-content:space-between;
-      padding:12px 20px 10px; border-bottom:2.5px solid #1A1A1A;
-    }
-    .r-title-left { display:flex; align-items:center; gap:12px; }
-    .r-logo { height:36px; width:auto; }
-    .r-company-name { font-size:14px; font-weight:800; color:#1A1A1A; }
-    .r-company-sub  { font-size:9px; color:#888; }
-    .r-head { font-size:21px; font-weight:800; color:#1A1A1A; letter-spacing:0.5px; }
+    /* META ROW */
+    .meta{display:flex;align-items:center;padding:7px 20px;background:#f7f7f7;border-bottom:1px solid #e0e0e0;font-size:10.5px;color:#555;gap:28px;}
+    .mv{font-weight:800;color:#1A1A1A;border-bottom:1.5px solid #333;padding-bottom:1px;margin-left:3px;}
+    .paid-pill{margin-left:auto;background:#E8471C;color:#fff;font-size:9px;font-weight:800;padding:2px 10px;border-radius:20px;letter-spacing:0.5px;}
 
-    .r-meta-row {
-      padding:6px 20px; font-size:11px; color:#333;
-      display:flex; align-items:center; border-bottom:1px solid #ddd;
-    }
-    .r-meta-val { font-weight:700; color:#1A1A1A; border-bottom:1px solid #555; padding-bottom:1px; margin-left:4px; }
+    /* FIELDS GRID */
+    .fields{padding:0 20px;}
+    .row{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px dashed #ddd;}
+    .row.single{grid-template-columns:1fr;}
+    .cell{padding:9px 0 8px;font-size:11px;color:#333;}
+    .cell:first-child{padding-right:16px;}
+    .cell:last-child:not(:first-child){border-left:1px dashed #eee;padding-left:16px;}
+    .fl{font-weight:700;color:#1A1A1A;display:block;margin-bottom:3px;font-size:10px;text-transform:uppercase;letter-spacing:0.3px;}
+    .fv{font-weight:700;color:#1A1A1A;font-size:12px;border-bottom:1.5px solid #999;display:inline-block;min-width:140px;padding-bottom:1px;}
+    .amt-big{font-size:18px;font-weight:900;color:#E8471C;}
+    .in-words{font-style:italic;color:#666;font-size:11px;margin-top:2px;}
+    .check-row{display:flex;align-items:center;flex-wrap:wrap;gap:0 20px;padding:9px 0;border-bottom:1px dashed #ddd;font-size:11px;}
+    .chk-lbl{font-weight:700;color:#1A1A1A;font-size:10px;text-transform:uppercase;letter-spacing:0.3px;margin-right:8px;}
+    .chk-item{display:flex;align-items:center;gap:4px;color:#333;}
+    .chk{font-size:14px;}
+    .chk-line{border-bottom:1.5px solid #999;min-width:70px;display:inline-block;margin-left:2px;}
+    .recv-row{padding:9px 0;font-size:11px;color:#444;border-bottom:1px dashed #ddd;}
+    .recv-val{font-style:italic;}
 
-    .r-divider { border-top:1px dashed #ccc; margin:0 20px; }
+    /* TOTAL BAR */
+    .tot-bar{display:grid;grid-template-columns:1fr 1fr 1fr;background:#1A1A1A;color:#fff;margin-top:0;}
+    .tot-cell{padding:11px 20px;border-right:1px solid #333;}
+    .tot-cell:last-child{border-right:none;}
+    .tot-lbl{font-size:9px;color:#999;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:4px;}
+    .tot-val{font-size:16px;font-weight:900;}
+    .tot-val.green{color:#4ade80;}
+    .tot-val.orange{color:#fb923c;}
 
-    .r-row {
-      padding:7px 20px; display:flex; align-items:center;
-      flex-wrap:wrap; gap:4px; font-size:11px; color:#333; line-height:1.6;
-    }
-    .r-field { display:inline-flex; align-items:baseline; gap:4px; font-size:11px; }
-    .r-field-line { border-bottom:1px solid #555; min-width:120px; display:inline-block; font-weight:700; color:#1A1A1A; padding-bottom:1px; }
-    .r-label { font-weight:700; color:#1A1A1A; margin-right:6px; white-space:nowrap; }
-    .r-recvby { font-style:italic; color:#444; font-size:10.5px; }
+    /* E-NOTE */
+    .enote{text-align:center;padding:9px 20px;background:#fafafa;border-top:1px solid #eee;border-bottom:2px solid #e0e0e0;font-size:9.5px;color:#777;line-height:1.6;}
+    .enote b{color:#444;}
 
-    .check-item { font-size:11px; color:#333; margin-right:14px; }
-    .chk { font-size:13px; }
-    .check-line { border-bottom:1px solid #555; min-width:80px; display:inline-block; margin-left:3px; }
+    /* HISTORY */
+    .hist{padding:14px 20px 18px;}
+    .hist-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-bottom:7px;border-bottom:2px solid #E8471C;}
+    .hist-hdr .htitle{font-size:12px;font-weight:800;color:#1A1A1A;}
+    .hist-hdr .hcount{font-size:10px;color:#aaa;}
+    table.ht{width:100%;border-collapse:collapse;font-size:10.5px;}
+    table.ht thead tr{background:#1A1A1A;}
+    table.ht thead th{color:#fff;padding:7px 8px;text-align:left;font-size:9px;font-weight:700;letter-spacing:0.4px;}
+    table.ht thead th:last-child,table.ht thead th:nth-last-child(2){text-align:right;}
+    table.ht tbody td{padding:7px 8px;border-bottom:1px solid #f0f0f0;color:#333;vertical-align:middle;}
+    table.ht tbody tr:last-child td{border-bottom:none;}
 
-    .r-total-bar {
-      background:#2a2a2a; color:#fff;
-      display:flex; justify-content:space-between;
-      padding:8px 20px; font-size:12px; font-weight:600;
-    }
-    .r-total-bar strong { font-size:13px; }
+    /* FOOTER */
+    .foot{display:flex;justify-content:space-between;align-items:center;padding:8px 20px;background:#f7f7f7;border-top:1px solid #ddd;font-size:9px;color:#aaa;}
+    .foot b{color:#E8471C;}
 
-    /* Previous payments section */
-    .prev-section {
-      width:680px; background:#fff;
-      border:1.5px solid #bbb; border-top:none;
-      padding:16px 20px 20px;
-    }
-    .prev-title {
-      font-size:12px; font-weight:700; color:#1A1A1A;
-      letter-spacing:0.3px; margin-bottom:10px;
-      padding-bottom:6px; border-bottom:2px solid #1A1A1A;
-      display:flex; justify-content:space-between;
-    }
-    .prev-title span { font-size:10px; color:#888; font-weight:400; }
-    table.prev-tbl { width:100%; border-collapse:collapse; font-size:10.5px; }
-    table.prev-tbl thead tr { background:#1A1A1A; }
-    table.prev-tbl thead th { color:#fff; padding:6px 8px; text-align:left; font-size:9.5px; font-weight:700; letter-spacing:0.3px; }
-    table.prev-tbl thead th:last-child,
-    table.prev-tbl thead th:nth-last-child(2) { text-align:right; }
-    table.prev-tbl tbody td { padding:7px 8px; border-bottom:1px solid #F0F0F0; color:#333; }
-    table.prev-tbl tbody tr:last-child td { border-bottom:none; }
-
-    @media print {
-      body { background:#fff; padding:0; }
-      .receipt-block, .prev-section { box-shadow:none; }
-    }
+    @media print{body{background:#fff;padding:0;}.page{box-shadow:none;border:none;width:100%;}}
   </style>
 </head>
 <body>
+<div class="page">
 
-  <!-- Single Receipt -->
-  <div class="receipt-block">
-    <div class="r-title-row">
-      <div class="r-title-left">
-        <img src="${logo}" class="r-logo" crossorigin="anonymous"/>
-        <div>
-          <div class="r-company-name">Deeraj Interiors</div>
-          <div class="r-company-sub">Interior Design &amp; Execution</div>
-        </div>
+  <!-- HEADER -->
+  <div class="hdr">
+    <div class="hdr-logo-col">
+      <img src="${logo}" class="r-logo" crossorigin="anonymous"/>
+      <div class="co-info">
+        <div class="co-name">DEERAJ INTERIORS</div>
+        <div class="co-addr">Plot No. 45, Kompally, Hyderabad — 500014 &nbsp;|&nbsp; +91-9848004312 &nbsp;|&nbsp; info@deerajinteriors.com</div>
+        <div class="co-gst">GST No: 36AABCD1234E1ZK</div>
       </div>
-      <span class="r-head">Payment Receipt</span>
     </div>
-
-    <div class="r-meta-row">
-      <span>Date <span class="r-meta-val">${fmtDate(txn.paid_date)}</span></span>
-      <span style="margin-left:36px;">No. <span class="r-meta-val">${rNo}</span></span>
-      <span style="margin-left:36px;">Payment <span class="r-meta-val">#${txnIndex+1} of ${sorted.length}</span></span>
-    </div>
-
-    <div class="r-row">
-      <span class="r-field">Received From <span class="r-field-line">${quotation.customer_name||''}</span></span>
-      <span class="r-field" style="margin-left:28px;">Purpose of Payment <span class="r-field-line">${txn.stage_name||'Interior Work'}</span></span>
-    </div>
-    <div class="r-divider"></div>
-
-    <div class="r-row">
-      <span class="r-field">Amount: <strong>${fmtAmt(amt)} /-</strong></span>
-      <span class="r-field" style="margin-left:20px;">In Words: <em>${inWords(amt)}</em></span>
-    </div>
-    <div class="r-divider"></div>
-
-    <div class="r-row">
-      <span class="r-label">Paid By:</span>
-      ${modeChecks}
-    </div>
-    <div class="r-divider"></div>
-
-    <div class="r-row">
-      <span class="r-label">Received By:</span>
-      <span class="r-recvby">${txn.received_by||'___________________'} &nbsp;|&nbsp; ${quotation.location||quotation.site_name||'___________________'} &nbsp;|&nbsp; ${quotation.mobile||'___________'}</span>
-    </div>
-    ${txn.remarks ? `<div class="r-divider"></div><div class="r-row"><span class="r-label">Remarks:</span> <span style="font-size:11px;color:#444;">${txn.remarks}</span></div>` : ''}
-
-    <div class="r-divider"></div>
-    <div class="r-total-bar">
-      <span>Total Amount: <strong>${fmtAmt(grandTotal)}</strong></span>
-      <span>Paid So Far: <strong>${fmtAmt(paidUpTo)}</strong></span>
-      <span>Balance: <strong>${fmtAmt(balance)}</strong></span>
+    <div class="hdr-title-col">
+      <div class="r-title">Payment<br><span>Receipt</span></div>
+      <div class="r-sub">Official Acknowledgement</div>
+      <div class="r-badge">${rNo}</div>
     </div>
   </div>
 
-  <!-- Previous payments table below receipt -->
-  <div class="prev-section">
-    <div class="prev-title">
-      Payment History
-      <span>${prevTxns.length} record${prevTxns.length!==1?'s':''} total</span>
+  <!-- META ROW -->
+  <div class="meta">
+    <span>Date <span class="mv">${fmtDate(txn.paid_date)}</span></span>
+    <span>No. <span class="mv">${rNo}</span></span>
+    <span>Payment <span class="mv">#${txnIndex+1} of ${sorted.length}</span></span>
+    <span class="paid-pill">PAID</span>
+  </div>
+
+  <!-- FIELDS -->
+  <div class="fields">
+
+    <div class="row">
+      <div class="cell">
+        <span class="fl">Received From</span>
+        <span class="fv">${quotation.customer_name||'—'}</span>
+      </div>
+      <div class="cell">
+        <span class="fl">Project / Site</span>
+        <span class="fv">${quotation.site_name||quotation.location||'—'}</span>
+      </div>
     </div>
-    <table class="prev-tbl">
+
+    <div class="row">
+      <div class="cell">
+        <span class="fl">Purpose of Payment</span>
+        <span class="fv">${txn.stage_name||'Interior Work'}</span>
+      </div>
+      <div class="cell">
+        <span class="fl">Location</span>
+        <span class="fv">${quotation.location||'—'}</span>
+      </div>
+    </div>
+
+    <div class="row single">
+      <div class="cell">
+        <span class="fl">Amount Received</span>
+        <span class="amt-big">${fmtAmt(amt)} /-</span>
+        <div class="in-words">In Words: <em>${inWords(amt)}</em></div>
+      </div>
+    </div>
+
+    <div class="check-row">
+      <span class="chk-lbl">Paid By:</span>
+      ${modeChecks}
+    </div>
+
+    <div class="recv-row">
+      <strong>Received By: </strong>
+      <span class="recv-val">${txn.received_by||'—'} &nbsp;|&nbsp; ${quotation.location||quotation.site_name||'—'} &nbsp;|&nbsp; ${quotation.mobile||'—'}</span>
+    </div>
+
+    ${txn.remarks ? `<div class="recv-row"><strong>Remarks: </strong>${txn.remarks}</div>` : ''}
+
+  </div>
+
+  <!-- TOTAL BAR -->
+  <div class="tot-bar">
+    <div class="tot-cell">
+      <div class="tot-lbl">Total Project Value</div>
+      <div class="tot-val">${fmtAmt(grandTotal)}</div>
+    </div>
+    <div class="tot-cell">
+      <div class="tot-lbl">Total Paid So Far</div>
+      <div class="tot-val green">${fmtAmt(paidUpTo)}</div>
+    </div>
+    <div class="tot-cell">
+      <div class="tot-lbl">Balance Due</div>
+      <div class="tot-val orange">${fmtAmt(balance)}</div>
+    </div>
+  </div>
+
+  <!-- E-NOTE -->
+  <div class="enote">
+    <b>📧 This is an electronically generated receipt. No physical signature is required.</b><br>
+    This document is valid without a stamp or signature. &nbsp;|&nbsp; For queries: info@deerajinteriors.com &nbsp;|&nbsp; +91-9848004312
+  </div>
+
+  <!-- PAYMENT HISTORY -->
+  <div class="hist">
+    <div class="hist-hdr">
+      <span class="htitle">Payment History</span>
+      <span class="hcount">${prevTxns.length} record${prevTxns.length!==1?'s':''} total</span>
+    </div>
+    <table class="ht">
       <thead>
         <tr>
-          <th>#</th>
-          <th>Receipt No</th>
-          <th>Stage</th>
-          <th>Date</th>
-          <th>Mode</th>
-          <th>Reference</th>
-          <th>Amount</th>
-          <th>Running Total</th>
+          <th>#</th><th>Receipt No</th><th>Stage</th><th>Date</th>
+          <th>Mode</th><th>Reference</th>
+          <th style="text-align:right;">Amount</th>
+          <th style="text-align:right;">Running Total</th>
         </tr>
       </thead>
-      <tbody>
-        ${prevRows}
-      </tbody>
+      <tbody>${prevRows}</tbody>
     </table>
   </div>
 
-  <script>window.onload = () => window.print();</script>
+  <!-- FOOTER -->
+  <div class="foot">
+    <div><b>DEERAJ INTERIORS</b> — Plot No. 45, Kompally, Hyderabad — 500014 | GST: 36AABCD1234E1ZK</div>
+    <div>Generated: ${new Date().toLocaleDateString('en-IN')} | Ref: ${rNo}</div>
+  </div>
+
+</div>
+<script>window.onload=()=>window.print();</script>
 </body>
 </html>`;
 
@@ -687,7 +1936,7 @@ function generateReceipt(txn, quotation, allTransactions=[]) {
   if (w) { w.document.write(html); w.document.close(); }
 }
 
-function PaymentTransactionsModal({ quotation, onClose, onPaymentSaved }) {
+function PaymentTransactionsModal({ quotation, onClose, onPaymentSaved, user }) {
   const overlayRef = useRef();
   const fileRef = useRef();
   const [transactions, setTransactions] = useState([]);
@@ -695,6 +1944,7 @@ function PaymentTransactionsModal({ quotation, onClose, onPaymentSaved }) {
   const [form, setForm] = useState(emptyTxn());
   const [editingId, setEditingId] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [deleteReqTxn, setDeleteReqTxn] = useState(null); // txn for which manager is requesting delete
 
   const stages = (quotation.pay_stages || []).map(s =>
     typeof s === 'string' ? s : s.stage
@@ -960,8 +2210,15 @@ function PaymentTransactionsModal({ quotation, onClose, onPaymentSaved }) {
                           style={{background:'#FFF8F6',border:'none',borderRadius:6,padding:'5px 8px',cursor:'pointer',color:C.brand,fontSize:12,marginRight:3}}>🧾</button>
                         <button onClick={()=>handleEdit(txn)}
                           style={{background:'#EFF6FF',border:'none',borderRadius:6,padding:'5px 8px',cursor:'pointer',color:'#1D4ED8',fontSize:12,marginRight:3}}>✏️</button>
-                        <button onClick={()=>handleDelete(txn.id)}
-                          style={{background:'#FFF0F0',border:'none',borderRadius:6,padding:'5px 8px',cursor:'pointer',color:C.red,fontSize:12}}>🗑</button>
+                        {user?.role==='admin' ? (
+                          <button onClick={()=>handleDelete(txn.id)}
+                            style={{background:'#FFF0F0',border:'none',borderRadius:6,padding:'5px 8px',cursor:'pointer',color:C.red,fontSize:12}}
+                            title="Delete payment">🗑</button>
+                        ) : (
+                          <button onClick={()=>setDeleteReqTxn(txn)}
+                            style={{background:'#FEF9E6',border:'1.5px dashed #FCD34D',borderRadius:6,padding:'5px 8px',cursor:'pointer',color:'#B45309',fontSize:12}}
+                            title="Request deletion from admin">🔓</button>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -984,6 +2241,17 @@ function PaymentTransactionsModal({ quotation, onClose, onPaymentSaved }) {
           )}
         </div>
       </div>
+
+      {/* Payment delete request modal */}
+      {deleteReqTxn && (
+        <PaymentDeleteRequestModal
+          txn={deleteReqTxn}
+          quotation={quotation}
+          user={user}
+          onClose={()=>setDeleteReqTxn(null)}
+          onSent={()=>{ setDeleteReqTxn(null); toast.success('Request sent! Admin will review.'); }}
+        />
+      )}
     </div>
   );
 }
@@ -1462,6 +2730,8 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
   const [smPhone,        setSmPhone]        = useState(data.site_manager_phone || '');
   const [smDesignation,  setSmDesignation]  = useState(data.site_manager_designation || '');
   const [smBranch,       setSmBranch]       = useState(data.site_manager_branch || '');
+  const [projectStartDate, setProjectStartDate] = useState(data.project_start_date ? data.project_start_date.slice(0,10) : '');
+  const [projectEndDate,   setProjectEndDate]   = useState(data.project_end_date   ? data.project_end_date.slice(0,10)   : '');
   const [gstPercent,      setGstPercent]      = useState(Number(data.gst_percent)      || 0);
   const [discountPercent, setDiscountPercent] = useState(Number(data.discount_percent) || 0);
   const [saving,         setSaving]         = useState(false);
@@ -1602,6 +2872,8 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
         location, mobile: clientPhone, project_type: projectType,
         site_manager_name: smName, site_manager_phone: smPhone,
         site_manager_designation: smDesignation, site_manager_branch: smBranch,
+        project_start_date: projectStartDate || null,
+        project_end_date:   projectEndDate   || null,
         rooms: roomsToSave, accessories: roomsToSave.accessories,
         ceiling_data: sections, tc_items: Array.isArray(tcItems)?tcItems:(typeof tcItems==='string'?JSON.parse(tcItems):[]), discount_percent: discountPercent, discount_amount: discountAmount, gst_percent: gstPercent, gst_amount: gstAmount,
         total_interior: totalInterior, total_ceiling: totalAllSections, grand_total: grandTotal,
@@ -1765,6 +3037,16 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                   <option value="">— Select Branch —</option>
                   {['Kompally','Medchal','Gachibowli','Bheemavaram'].map(b=><option key={b} value={b}>{b}</option>)}
                 </select>
+              </div>
+              <div className="field-group">
+                <label className="field-label">🗓 Project Start Date</label>
+                <input className="field-input" type="date"
+                  value={projectStartDate} onChange={e=>setProjectStartDate(e.target.value)} />
+              </div>
+              <div className="field-group">
+                <label className="field-label">🏁 Project End Date</label>
+                <input className="field-input" type="date"
+                  value={projectEndDate} onChange={e=>setProjectEndDate(e.target.value)} />
               </div>
             </div>
           </section>
@@ -2109,8 +3391,18 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   const canDelete = isAdmin;
   // Per-quotation permission checks (pass the quotation object)
   const isUnbooked      = (q) => (q.project_status||'Unbooked') === 'Unbooked';
-  const canEdit         = (q) => isAdmin || (isManager && isUnbooked(q));
-  const canChangeStatus = (q) => isAdmin || (isManager && isUnbooked(q));
+  const canEdit         = (q) => isAdmin || (isManager && (isUnbooked(q) || approvedEdits.includes(q.id)));
+
+  // Action button style helper
+  const actBtn = (bg, color) => ({
+    width:32, height:32, borderRadius:8, border:`1.5px solid ${color}22`,
+    background:bg, color:color, fontSize:14, cursor:'pointer',
+    display:'flex', alignItems:'center', justifyContent:'center',
+    transition:'all 0.15s', flexShrink:0, padding:0,
+    boxShadow:'0 1px 3px rgba(0,0,0,0.08)',
+  });
+  // Admin can change status freely; non-admins cannot change a Booked project back
+  const canChangeStatus = (q) => isAdmin || isUnbooked(q);
 
   const [quotations,    setQuotations]    = useState([]);
   const [statusFilter,  setStatusFilter]  = useState('All');
@@ -2125,6 +3417,14 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   const [filterTo,      setFilterTo]      = useState('');
   const [filterBudgetMin, setFilterBudgetMin] = useState('');
   const [filterBudgetMax, setFilterBudgetMax] = useState('');
+  const [showProjectMgmt,     setShowProjectMgmt]     = useState(false);
+  const [showEditReqPanel,    setShowEditReqPanel]    = useState(false);
+  const [showPayDelPanel,     setShowPayDelPanel]     = useState(false);
+  const [visitReportQ,        setVisitReportQ]        = useState(null);  // quotation for visit report
+  const [completionQ,         setCompletionQ]         = useState(null);  // quotation for completion status  // admin: view requests
+  const [editRequestModal,    setEditRequestModal]    = useState(null);   // manager: send request {quotation}
+  const [approvedEdits,       setApprovedEdits]       = useState([]);     // quotation_ids manager can edit
+  const [pmProjectId,         setPmProjectId]          = useState(null); // pre-select a project in PM modal
 
   const fetchAll = async () => {
     try { const res=await api.get(`/quotations`); setQuotations(res.data.data||[]); } catch { toast.error('Failed to fetch'); }
@@ -2149,13 +3449,19 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   };
   const handleDelete   = async (id) => { if (!canDelete) { toast.error('Only admins can delete quotations'); return; } if (!window.confirm('Delete this quotation?')) return; await api.delete(`/quotations/${id}`); toast.success('Deleted'); fetchAll(); };
   const handleStatusChange = async (id, status) => {
-    const q = quotations.find(q => q.id === id);
-    if (!canChangeStatus(q)) { toast.error('Cannot change status of a Booked project'); return; }
+    // Only block non-admins from changing a Booked project
+    const current = quotations.find(q => q.id === id);
+    if (!isAdmin && (current?.project_status || 'Unbooked') === 'Booked') {
+      toast.error('🔒 This project is Booked and cannot be changed back.');
+      return;
+    }
+    // Optimistically update UI
     setQuotations(prev => prev.map(q => q.id === id ? { ...q, project_status: status } : q));
     try {
-      await api.patch(`/quotations/${id}/status`, { project_status: status });
+      await api.patch(`/quotations/${id}/status`, { project_status: status, role: user.role });
       toast.success(`Marked as ${status}`);
     } catch (err) {
+      // Revert on failure
       fetchAll();
       const msg = err.response?.data?.message || err.message || 'Failed to update status';
       toast.error(msg);
@@ -2168,7 +3474,18 @@ export default function QuotationList({ user = { role: 'admin' } }) {
     toast.loading('Generating…',{id:'dl'});
     try { const blob=await pdf(<QuotationPDF data={d}/>).toBlob(); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download=`Deeraj_Quotation_${d.customer_name.replace(/\s+/g,'_')}_${id}.pdf`; a.click(); URL.revokeObjectURL(url); toast.success('Downloaded!',{id:'dl'}); } catch { toast.error('Failed',{id:'dl'}); }
   };
-  const handlePrint    = async (id) => { try { const res=await api.get(`/quotations/${id}`); const txRes=await api.get(`/quotations/${id}/transactions`); printQuotation(res.data.data, txRes.data.data||[]); } catch { toast.error('Failed to load'); } };
+  const handlePrint    = async (id) => {
+    const res=await api.get(`/quotations/${id}`); const d=res.data.data;
+    toast.loading('Generating PDF…',{id:'pr'});
+    try {
+      const blob=await pdf(<QuotationPDF data={d}/>).toBlob();
+      const url=URL.createObjectURL(blob);
+      const w=window.open(url,'_blank');
+      if(w){ w.onload=()=>{ w.print(); }; }
+      toast.success('Ready to print!',{id:'pr'});
+      setTimeout(()=>URL.revokeObjectURL(url), 60000);
+    } catch { toast.error('Failed',{id:'pr'}); }
+  };
 
   // Derive unique branches and managers for filter dropdowns
   const allBranches  = [...new Set(quotations.map(q=>q.site_manager_branch||'').filter(Boolean))].sort();
@@ -2220,16 +3537,56 @@ export default function QuotationList({ user = { role: 'admin' } }) {
 
   return (
     <div className="list-page fade-up">
+      {showProjectMgmt && (
+        <ProjectManagement
+          onClose={() => { setShowProjectMgmt(false); setPmProjectId(null); }}
+          preSelectedProjectId={pmProjectId}
+        />
+      )}
       {paymentQ && ReactDOM.createPortal(
-        <PaymentTransactionsModal quotation={paymentQ} onClose={()=>setPaymentQ(null)} onPaymentSaved={fetchAll} />,
+        <PaymentTransactionsModal quotation={paymentQ} onClose={()=>setPaymentQ(null)} onPaymentSaved={fetchAll} user={user} />,
         document.body
       )}
       {selected && <ViewModal key={selected.id+'_'+(selected.updated_at||selected.created_at||Math.random())} data={selected} onClose={()=>setSelected(null)} canDelete={canDelete} onDelete={(id)=>{ handleDelete(id); setSelected(null); }}/>}
       {editing  && <EditModal data={editing}  onClose={()=>setEditing(null)} onSaved={handleEditSaved} canDelete={canDelete} onDelete={(id)=>{ handleDelete(id); setEditing(null); }}/>}
+      {editRequestModal && (
+        <EditRequestModal
+          quotation={editRequestModal}
+          user={user}
+          onClose={()=>setEditRequestModal(null)}
+          onSent={()=>{}}
+        />
+      )}
+      {showEditReqPanel && (
+        <AdminRequestsPanel
+          onClose={()=>setShowEditReqPanel(false)}
+          onApproved={fetchAll}
+        />
+      )}
+      {showPayDelPanel && (
+        <AdminPayDeletePanel
+          onClose={()=>setShowPayDelPanel(false)}
+          onActioned={fetchAll}
+        />
+      )}
+      {visitReportQ && (
+        <VisitReportModal
+          quotation={visitReportQ}
+          user={user}
+          onClose={()=>setVisitReportQ(null)}
+        />
+      )}
+      {completionQ && (
+        <CompletionStatusModal
+          quotation={completionQ}
+          user={user}
+          onClose={()=>setCompletionQ(null)}
+        />
+      )}
 
       {isManager && (
         <div style={{margin:'0 0 14px',padding:'10px 20px',background:'#EFF6FF',border:'1.5px solid #BFDBFE',borderRadius:10,display:'flex',alignItems:'center',gap:10,fontFamily:"'DM Sans',sans-serif",fontSize:13,color:'#1D4ED8',fontWeight:600}}>
-          🏗️ You are logged in as <strong>Site Manager</strong>. You can <strong>edit</strong> and <strong>change status</strong> of Unbooked projects. Once a project is Booked, it becomes read-only.
+          🏗️ You are logged in as <strong>Site Manager</strong>. You can <strong>edit</strong> Unbooked projects. For Booked projects, click the <strong>🔓</strong> button to request edit permission from admin.
         </div>
       )}
       <div className="list-header">
@@ -2246,6 +3603,41 @@ export default function QuotationList({ user = { role: 'admin' } }) {
               onMouseLeave={e=>{e.currentTarget.style.background='#E8471C';e.currentTarget.style.transform='none';}}>
               <svg width="15" height="15" viewBox="0 0 15 15" fill="none"><path d="M7.5 2V13M2 7.5H13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
               New Quotation
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              onClick={() => setShowEditReqPanel(true)}
+              style={{display:'flex',alignItems:'center',gap:7,padding:'10px 18px',
+                background:'#FEF9E6',color:'#B45309',border:'2px solid #FCD34D',
+                borderRadius:10,fontFamily:"'DM Sans',sans-serif",fontSize:14,
+                fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>
+              📋 Edit Requests
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              onClick={() => setShowPayDelPanel(true)}
+              style={{display:'flex',alignItems:'center',gap:7,padding:'10px 18px',
+                background:'#FFF0F0',color:'#B91C1C',border:'2px solid #FECACA',
+                borderRadius:10,fontFamily:"'DM Sans',sans-serif",fontSize:14,
+                fontWeight:700,cursor:'pointer',whiteSpace:'nowrap',flexShrink:0}}>
+              🗑️ Pay Delete Req
+            </button>
+          )}
+          {(isManager || isAdmin) && (
+            <button
+              onClick={() => { setPmProjectId(null); setShowProjectMgmt(true); }}
+              style={{display:'flex',alignItems:'center',gap:'7px',padding:'11px 20px',
+                background:'linear-gradient(135deg,#1A1A1A 0%,#2d1200 100%)',
+                color:'#fff',border:'none',borderRadius:'10px',
+                fontFamily:"'DM Sans',sans-serif",fontSize:'14px',fontWeight:'700',
+                cursor:'pointer',whiteSpace:'nowrap',
+                boxShadow:'0 4px 14px rgba(232,71,28,0.25)',
+                transition:'all 0.2s',flexShrink:0}}
+              onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-1px)';}}
+              onMouseLeave={e=>{e.currentTarget.style.transform='none';}}>
+              📋 Project Management
             </button>
           )}
         </div>
@@ -2358,6 +3750,98 @@ export default function QuotationList({ user = { role: 'admin' } }) {
         ))}
       </div>
 
+      {/* ── Booked Projects quick panel ── */}
+      {(isManager || isAdmin) && !loading && bookedQ.length > 0 && (
+        <div style={{marginBottom:20,background:'linear-gradient(135deg,#fff8f5,#fff)',
+          border:'2px solid rgba(232,71,28,0.2)',borderRadius:14,overflow:'hidden',
+          boxShadow:'0 2px 12px rgba(232,71,28,0.08)'}}>
+          <div style={{padding:'14px 20px',background:'linear-gradient(135deg,#1A1A1A,#2d1200)',
+            display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+            <div style={{display:'flex',alignItems:'center',gap:10}}>
+              <span style={{fontSize:18}}>🏗️</span>
+              <div>
+                <div style={{fontWeight:800,fontSize:15,color:'#fff',fontFamily:"'DM Sans',sans-serif"}}>
+                  {isAdmin ? '📊 All Active Projects' : '🏗️ My Active Projects'}
+                </div>
+                <div style={{fontSize:11,color:'#aaa',marginTop:1}}>
+                  {bookedQ.length} booked project{bookedQ.length!==1?'s':''} — click to manage
+                </div>
+              </div>
+            </div>
+            <button onClick={() => { setPmProjectId(null); setShowProjectMgmt(true); }}
+              style={{padding:'8px 16px',background:'#E8471C',color:'#fff',border:'none',
+                borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer',
+                fontFamily:"'DM Sans',sans-serif"}}>
+              📋 Open Project Management
+            </button>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:0}}>
+            {bookedQ.slice(0,6).map((q, idx) => {
+              const paid    = Number(q.paid_total||0);
+              const total   = Number(q.grand_total||0);
+              const balance = total - paid;
+              const paidPct = total > 0 ? Math.round((paid/total)*100) : 0;
+              return (
+                <div key={q.id}
+                  onClick={() => { setPmProjectId(q.id); setShowProjectMgmt(true); }}
+                  style={{padding:'14px 18px',borderBottom:'1px solid #f0f0f0',
+                    borderRight: idx%2===0 ? '1px solid #f0f0f0' : 'none',
+                    cursor:'pointer',transition:'background 0.15s',background:'#fff'}}
+                  onMouseEnter={e => e.currentTarget.style.background='#fff8f5'}
+                  onMouseLeave={e => e.currentTarget.style.background='#fff'}>
+                  <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:8}}>
+                    <div>
+                      <div style={{fontWeight:700,fontSize:13.5,color:'#1a1a1a',
+                        fontFamily:"'DM Sans',sans-serif"}}>
+                        {q.site_name || q.customer_name}
+                      </div>
+                      <div style={{fontSize:11,color:'#aaa',marginTop:2}}>
+                        #{q.quotation_id||q.id} · {q.customer_name} · {q.location||'—'}
+                      </div>
+                    </div>
+                    <span style={{background:'rgba(232,71,28,0.1)',color:'#E8471C',
+                      padding:'2px 8px',borderRadius:6,fontSize:10,fontWeight:700,
+                      flexShrink:0,marginLeft:8}}>
+                      BOOKED
+                    </span>
+                  </div>
+                  {/* Payment progress */}
+                  <div style={{marginBottom:8}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:10,
+                      color:'#888',marginBottom:3}}>
+                      <span>Payment Progress</span>
+                      <span style={{fontWeight:700,color:paidPct===100?'#10B981':'#E8471C'}}>{paidPct}%</span>
+                    </div>
+                    <div style={{height:5,background:'#f0f0f0',borderRadius:99,overflow:'hidden'}}>
+                      <div style={{height:'100%',width:paidPct+'%',
+                        background:paidPct===100?'#10B981':'#E8471C',
+                        borderRadius:99,transition:'width 0.5s'}}/>
+                    </div>
+                  </div>
+                  <div style={{display:'flex',gap:12,fontSize:11}}>
+                    <span style={{color:'#1a1a1a',fontWeight:700}}>
+                      ₹{Number(total).toLocaleString('en-IN')}
+                    </span>
+                    <span style={{color:'#10B981',fontWeight:600}}>
+                      Paid: ₹{Number(paid).toLocaleString('en-IN')}
+                    </span>
+                    <span style={{color:balance>0?'#E8471C':'#10B981',fontWeight:600}}>
+                      Due: ₹{Number(balance).toLocaleString('en-IN')}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {bookedQ.length > 6 && (
+            <div style={{padding:'10px 20px',borderTop:'1px solid #f0f0f0',
+              textAlign:'center',fontSize:12,color:'#888',background:'#fafafa'}}>
+              +{bookedQ.length - 6} more booked projects — view all in the table below
+            </div>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <div className="loading-state"><div className="loading-spinner"/><p>Loading quotations…</p></div>
       ) : filtered.length===0 ? (
@@ -2365,8 +3849,8 @@ export default function QuotationList({ user = { role: 'admin' } }) {
       ) : (
         <div className="table-card">
           <table className="list-table">
-            <colgroup><col className="col-id"/><col className="col-name"/><col className="col-loc"/><col className="col-mobile"/>{isAdmin&&<col className="col-manager"/>}{isAdmin&&<col style={{minWidth:90}}/>}<col className="col-total"/><col className="col-paid"/><col className="col-balance"/><col className="col-status"/><col className="col-date"/><col className="col-actions"/></colgroup>
-            <thead><tr><th className="col-id">QID</th><th className="col-name">Customer</th><th className="col-loc">Location</th><th className="col-mobile">Mobile</th>{isAdmin&&<th className="col-manager">Manager</th>}{isAdmin&&<th style={{fontSize:11,minWidth:90}}>Branch</th>}<th className="col-total">Grand Total</th><th className="col-paid">Paid</th><th className="col-balance">Balance</th><th className="col-status">Status</th><th className="col-date">Date</th><th className="col-actions">Actions</th></tr></thead>
+            <colgroup><col className="col-id"/><col className="col-name"/><col className="col-loc"/><col className="col-mobile"/>{isAdmin&&<col className="col-manager"/>}{isAdmin&&<col style={{minWidth:90}}/>}<col className="col-total"/><col className="col-paid"/><col className="col-balance"/><col className="col-status"/><col className="col-date"/><col className="col-actions" style={{width:110}}/><col style={{width:70,minWidth:70}}/></colgroup>
+            <thead><tr><th className="col-id">QID</th><th className="col-name">Customer</th><th className="col-loc">Location</th><th className="col-mobile">Mobile</th>{isAdmin&&<th className="col-manager">Manager</th>}{isAdmin&&<th style={{fontSize:11,minWidth:90}}>Branch</th>}<th className="col-total">Grand Total</th><th className="col-paid">Paid</th><th className="col-balance">Balance</th><th className="col-status">Status</th><th className="col-date" style={{whiteSpace:'nowrap'}}>Date / Project</th><th className="col-actions">Actions</th><th style={{fontSize:10,fontWeight:700,textAlign:'center',width:70,padding:'8px 4px',whiteSpace:'nowrap'}}>% Done</th></tr></thead>
             <tbody>
               {filtered.map((q,idx)=>(
                 <tr key={q.id} className="list-row" style={{animationDelay:`${idx*0.04}s`}}>
@@ -2384,26 +3868,63 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                     {Number(q.grand_total)>0 ? '₹'+(Number(q.grand_total)-Number(q.paid_total||0)).toLocaleString('en-IN') : '—'}
                   </td>
                   <td className="status-cell col-status">
-                    <select className={`status-select status-${(q.project_status||'Unbooked').toLowerCase()}`}
-                      value={q.project_status||'Unbooked'}
-                      disabled={!canChangeStatus(q)}
-                      title={!canChangeStatus(q)?'Cannot change status of a Booked project':'Change project status'}
-                      onChange={e=>handleStatusChange(q.id,e.target.value)}
-                      style={{opacity:canChangeStatus(q)?1:0.6,cursor:canChangeStatus(q)?'pointer':'not-allowed'}}>
-                      <option value="Booked">✅ Booked</option>
-                      <option value="Unbooked">🔘 Unbooked</option>
-                    </select>
+                    {!isAdmin && (q.project_status||'Unbooked') === 'Booked' ? (
+                      <div style={{
+                        display:'inline-flex', alignItems:'center', gap:5,
+                        padding:'5px 12px', borderRadius:20,
+                        background:'#F0FDF4', border:'1.5px solid #86EFAC',
+                        color:'#15803D', fontWeight:700, fontSize:12,
+                        cursor:'not-allowed', userSelect:'none',
+                      }} title="Only admins can change a Booked project">
+                        ✅ Booked <span style={{fontSize:11, opacity:0.7}}>🔒</span>
+                      </div>
+                    ) : (
+                      <select className={`status-select status-${(q.project_status||'Unbooked').toLowerCase()}`}
+                        value={q.project_status||'Unbooked'}
+                        onChange={e=>handleStatusChange(q.id,e.target.value)}
+                        style={{opacity:1,cursor:'pointer'}}>
+                        <option value="Booked">✅ Booked</option>
+                        <option value="Unbooked">🔘 Unbooked</option>
+                      </select>
+                    )}
                   </td>
-                  <td className="date-cell col-date">{new Date(q.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</td>
-                  <td className="actions-cell col-actions">
-                    <div className="actions-inner">
-                      <button className="tbl-btn view"    onClick={()=>handleView(q.id)}>👁 View</button>
-                      {canEdit(q) && <button className="tbl-btn edit"    onClick={()=>handleEdit(q.id)}>✏️ Edit</button>}
-                      <button className="tbl-btn payment" onClick={()=>handlePayment(q.id)}>💳 Pay</button>
-                      <button className="tbl-btn download"onClick={()=>handleDownload(q.id)}>⬇ PDF</button>
-                      <button className="tbl-btn print"   onClick={()=>handlePrint(q.id)}>🖨</button>
-                      {canDelete && <button className="tbl-btn delete"  onClick={()=>handleDelete(q.id)}>🗑</button>}
+                  <td className="date-cell col-date">
+                    <div style={{fontSize:11,color:'#888',marginBottom:3}}>
+                      📅 {new Date(q.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
                     </div>
+                    <div style={{display:'flex',flexDirection:'column',gap:2}}>
+                      {q.project_start_date
+                        ? <span style={{fontSize:11,color:'#15803d',fontWeight:700}}>▶ {new Date(q.project_start_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</span>
+                        : <span style={{fontSize:10,color:'#ccc'}}>Start: —</span>
+                      }
+                      {q.project_end_date
+                        ? <span style={{fontSize:11,color:'#E8471C',fontWeight:700}}>⏹ {new Date(q.project_end_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</span>
+                        : <span style={{fontSize:10,color:'#ccc'}}>End: —</span>
+                      }
+                    </div>
+                  </td>
+                  <td className="actions-cell col-actions">
+                    <ActionDropdown
+                      q={q}
+                      canEdit={canEdit}
+                      isManager={isManager}
+                      isAdmin={isAdmin}
+                      canDelete={canDelete}
+                      approvedEdits={approvedEdits}
+                      onView={()=>handleView(q.id)}
+                      onEdit={()=>handleEdit(q.id)}
+                      onRequestEdit={()=>setEditRequestModal(q)}
+                      onPayment={()=>handlePayment(q.id)}
+                      onDownload={()=>handleDownload(q.id)}
+                      onPrint={()=>handlePrint(q.id)}
+                      onDelete={()=>handleDelete(q.id)}
+                      onProjectMgmt={(isManager||isAdmin) && q.project_status==='Booked' ? ()=>{ setPmProjectId(q.id); setShowProjectMgmt(true); } : null}
+                      onVisitReport={()=>setVisitReportQ(q)}
+                      onCompletion={()=>setCompletionQ(q)}
+                    />
+                  </td>
+                  <td style={{padding:'6px 4px',textAlign:'center',verticalAlign:'middle',width:70}}>
+                    <CompletionBar quotationId={q.id} />
                   </td>
                 </tr>
               ))}
@@ -2418,22 +3939,46 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                 </div></div>
                 <div className="mc-meta">
                   <div className="mc-meta-item">
-                    <select className={`status-select status-${(q.project_status||'Unbooked').toLowerCase()}`}
-                      value={q.project_status||'Unbooked'}
-                      onChange={e=>handleStatusChange(q.id,e.target.value)}
-                      style={{fontSize:11}}>
-                      <option value="Booked">✅ Booked</option>
-                      <option value="Unbooked">🔘 Unbooked</option>
-                    </select>
+                    {!isAdmin && (q.project_status||'Unbooked') === 'Booked' ? (
+                      <div style={{
+                        display:'inline-flex', alignItems:'center', gap:4,
+                        padding:'4px 10px', borderRadius:20,
+                        background:'#F0FDF4', border:'1.5px solid #86EFAC',
+                        color:'#15803D', fontWeight:700, fontSize:11,
+                        cursor:'not-allowed', userSelect:'none',
+                      }} title="Only admins can change a Booked project">
+                        ✅ Booked 🔒
+                      </div>
+                    ) : (
+                      <select className={`status-select status-${(q.project_status||'Unbooked').toLowerCase()}`}
+                        value={q.project_status||'Unbooked'}
+                        onChange={e=>handleStatusChange(q.id,e.target.value)}
+                        style={{fontSize:11}}>
+                        <option value="Booked">✅ Booked</option>
+                        <option value="Unbooked">🔘 Unbooked</option>
+                      </select>
+                    )}
                   </div>
                   {q.location&&<div className="mc-meta-item">{q.location}</div>}<div className="mc-meta-item">{q.mobile}</div><div className="mc-meta-item">{new Date(q.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</div></div>
                 <div className="mc-actions">
-                  <button className="tbl-btn view" onClick={()=>handleView(q.id)}>View</button>
-                  {canEdit(q) && <button className="tbl-btn edit" onClick={()=>handleEdit(q.id)}>Edit</button>}
-                  <button className="tbl-btn payment" onClick={()=>handlePayment(q.id)}>💳 Pay</button>
-                  <button className="tbl-btn download" onClick={()=>handleDownload(q.id)}>PDF</button>
-                  <button className="tbl-btn print" onClick={()=>handlePrint(q.id)}>Print</button>
-                  <button className="tbl-btn delete" onClick={()=>handleDelete(q.id)}>🗑</button>
+                  <ActionDropdown
+                    q={q}
+                    canEdit={canEdit}
+                    isManager={isManager}
+                    isAdmin={isAdmin}
+                    canDelete={canDelete}
+                    approvedEdits={approvedEdits}
+                    onView={()=>handleView(q.id)}
+                    onEdit={()=>handleEdit(q.id)}
+                    onRequestEdit={()=>setEditRequestModal(q)}
+                    onPayment={()=>handlePayment(q.id)}
+                    onDownload={()=>handleDownload(q.id)}
+                    onPrint={()=>handlePrint(q.id)}
+                    onDelete={()=>handleDelete(q.id)}
+                    onProjectMgmt={(isManager||isAdmin) && q.project_status==='Booked' ? ()=>{ setPmProjectId(q.id); setShowProjectMgmt(true); } : null}
+                    onVisitReport={()=>setVisitReportQ(q)}
+                    onCompletion={()=>setCompletionQ(q)}
+                  />
                 </div>
               </div>
             ))}
