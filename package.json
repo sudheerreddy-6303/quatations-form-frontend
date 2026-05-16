@@ -20,6 +20,6 @@
     "development": ["last 1 chrome version", "last 1 firefox version", "last 1 safari version"]
   },
   "engines": {
-    "node": "20.19.2"
+    "node": "20.x"
   }
 }

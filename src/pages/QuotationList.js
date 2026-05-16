@@ -2060,9 +2060,6 @@ function PaymentTransactionsModal({ quotation, onClose, onPaymentSaved, user }) 
           </div>
         </div>
 
-
-        {/* for sample  */}
-
         <div style={{padding:'20px 24px'}}>
 
           {/* Add / Edit Payment Form */}
