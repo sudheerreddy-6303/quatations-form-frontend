@@ -164,14 +164,25 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
   const toggle = (e) => {
     e.stopPropagation();
     if (!open) {
-      // Calculate position relative to viewport
       const rect = btnRef.current.getBoundingClientRect();
-      const menuH = 280; // estimated menu height
-      // Flip up if not enough space below
+      const menuW = 185;
+      const menuH = 320;
+      const isMobile = window.innerWidth <= 768;
+
+      // Vertical: flip up if not enough space below
       const top = rect.bottom + menuH > window.innerHeight
-        ? rect.top - menuH - 4
+        ? Math.max(8, rect.top - menuH - 4)
         : rect.bottom + 4;
-      setPos({ top, right: window.innerWidth - rect.right });
+
+      if (isMobile) {
+        // On mobile: center on screen horizontally, or left-align
+        const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuW - 8));
+        setPos({ top, left, right: null });
+      } else {
+        // Desktop: right-align with button
+        const right = window.innerWidth - rect.right;
+        setPos({ top, right, left: null });
+      }
     }
     setOpen(o => !o);
   };
@@ -186,10 +197,11 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
       onClick={(e) => { e.stopPropagation(); setOpen(false); onClick(); }}
       style={{
         display:'flex', alignItems:'center', gap:10,
-        width:'100%', padding:'9px 16px', background:'none',
+        width:'100%', padding:'11px 16px', background:'none',
         border:'none', borderTop: sep ? '1px solid #f3f3f3' : 'none',
         cursor:'pointer', textAlign:'left', fontSize:13,
         color, fontFamily:"'DM Sans',sans-serif", fontWeight:500,
+        minHeight:44,
       }}
       onMouseEnter={e => e.currentTarget.style.background='#f8f8f8'}
       onMouseLeave={e => e.currentTarget.style.background='none'}
@@ -230,13 +242,15 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
           style={{
             position:'fixed',
             top: pos.top,
-            right: pos.right,
+            ...(pos.left  != null ? { left:  pos.left  } : {}),
+            ...(pos.right != null ? { right: pos.right } : {}),
             background:'#fff',
             border:'1px solid #e8e8e8',
             borderRadius:12,
             boxShadow:'0 12px 40px rgba(0,0,0,0.18)',
             zIndex:99999,
-            minWidth:175,
+            minWidth:185,
+            maxWidth:'calc(100vw - 16px)',
             overflow:'hidden',
             animation:'ddFadeIn 0.14s ease',
           }}
@@ -810,37 +824,43 @@ function VisitReportModal({ quotation, user, onClose }) {
 ══════════════════════════════════════════════════════════════ */
 function CompletionStatusModal({ quotation, user, onClose }) {
   const STAGES = [
-    { key:'design',       label:'Design',           icon:'🎨' },
-    { key:'electrical',   label:'Electrical',       icon:'⚡' },
-    { key:'false_ceiling',label:'False Ceiling',    icon:'🏗️' },
-    { key:'carcase',      label:'Carcase Fitting',  icon:'🪵' },
-    { key:'door_fitting', label:'Door Fitting',     icon:'🚪' },
-    { key:'accessories',  label:'Accessories Fitting',icon:'🔩'},
-    { key:'deep_cleaning',label:'Deep Cleaning',    icon:'🧹' },
-    { key:'furnishing',   label:'Furnishing & Cleaning',icon:'🛋️'},
+    { key:'design',        label:'Design',              icon:'🎨' },
+    { key:'electrical',    label:'Electrical',          icon:'⚡' },
+    { key:'false_ceiling', label:'False Ceiling',       icon:'🏗️' },
+    { key:'carcase',       label:'Carcase Fitting',     icon:'🪵' },
+    { key:'door_fitting',  label:'Door Fitting',        icon:'🚪' },
+    { key:'accessories',   label:'Accessories Fitting', icon:'🔩' },
+    { key:'deep_cleaning', label:'Deep Cleaning',       icon:'🧹' },
+    { key:'furnishing',    label:'Furnishing & Cleaning',icon:'🛋️'},
   ];
 
-  const [pct,        setPct]        = React.useState(0);
-  const [notes,      setNotes]      = React.useState('');
   const [stageDates, setStageDates] = React.useState({});
+  const [stagePcts,  setStagePcts]  = React.useState({}); // per-stage %
+  const [notes,      setNotes]      = React.useState('');
   const [loading,    setLoading]    = React.useState(true);
   const [saving,     setSaving]     = React.useState(false);
-  const [dragging,   setDragging]   = React.useState(false);
-  const trackRef = React.useRef();
+
+  // ── Auto-calculate average from all stage %s ──
+  const avgPct = Math.round(
+    STAGES.reduce((sum, s) => sum + (stagePcts[s.key] ?? 0), 0) / STAGES.length
+  );
+  const C = (p) => p>=100?'#15803d':p>=75?'#10B981':p>=50?'#F59E0B':p>=25?'#E8471C':'#EF4444';
+  const avgColor = C(avgPct);
+  const avgLabel = avgPct>=100?'🎉 Completed!':avgPct>=75?'Almost Done':avgPct>=50?'Halfway There':avgPct>=25?'In Progress':'Just Started';
 
   React.useEffect(() => {
     api.get('/completion-status/' + quotation.id)
       .then(r => {
         const d = r.data.data || {};
-        setPct(d.percentage || 0);
-        setNotes(d.notes || '');
         setStageDates(d.stage_dates || {});
+        setStagePcts(d.stage_pcts   || {});
+        setNotes(d.notes            || '');
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [quotation.id]);
 
-  const setStage = (key, field, val) =>
+  const setStageDate = (key, field, val) =>
     setStageDates(prev => ({ ...prev, [key]: { ...(prev[key]||{}), [field]: val } }));
 
   const handleSave = async () => {
@@ -848,49 +868,34 @@ function CompletionStatusModal({ quotation, user, onClose }) {
     try {
       await api.post('/completion-status', {
         quotation_id: quotation.id,
-        percentage:   pct,
+        percentage:   avgPct,       // save the auto-calculated average
         notes,
         stage_dates:  stageDates,
+        stage_pcts:   stagePcts,
         updated_by:   user?.display || user?.username || '',
       });
-      toast.success(`Saved — ${pct}% complete!`);
+      // Bust CompletionBar cache so dashboard refreshes
+      Object.keys(_cc).forEach(k => { if (String(k) === String(quotation.id)) delete _cc[k]; });
+      toast.success(`Saved — ${avgPct}% average complete!`);
       onClose();
     } catch { toast.error('Failed to save.'); }
     setSaving(false);
   };
 
-  const dragHandler = (e) => {
-    e.preventDefault();
-    setDragging(true);
-    const calc = (ev) => {
-      if (!trackRef.current) return;
-      const rect = trackRef.current.getBoundingClientRect();
-      setPct(Math.round(Math.max(0, Math.min((ev.clientX - rect.left) / rect.width, 1)) * 100));
-    };
-    calc(e);
-    const move = ev => calc(ev);
-    const up   = () => { setDragging(false); document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); };
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', up);
-  };
-
-  const color = pct>=100?'#15803d':pct>=75?'#10B981':pct>=50?'#F59E0B':pct>=25?'#E8471C':'#EF4444';
-  const label = pct>=100?'🎉 Completed!':pct>=75?'Almost Done':pct>=50?'Halfway There':pct>=25?'In Progress':'Just Started';
-
   if (loading) return null;
 
-  const IS = { padding:'6px 8px', border:'1.5px solid #e8e8e8', borderRadius:7, fontSize:12,
+  const IS  = { padding:'6px 8px', border:'1.5px solid #e8e8e8', borderRadius:7, fontSize:12,
     fontFamily:"'DM Sans',sans-serif", outline:'none', background:'#fff', width:'100%', boxSizing:'border-box' };
 
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:9999,
-      display:'flex',alignItems:'center',justifyContent:'center',padding:16}} onClick={onClose}>
-      <div style={{background:'#fff',borderRadius:18,width:'100%',maxWidth:620,
-        maxHeight:'92vh',display:'flex',flexDirection:'column',
+      display:'flex',alignItems:'center',justifyContent:'center',padding:12}} onClick={onClose}>
+      <div style={{background:'#fff',borderRadius:18,width:'100%',maxWidth:660,
+        maxHeight:'94vh',display:'flex',flexDirection:'column',
         boxShadow:'0 24px 60px rgba(0,0,0,0.25)',fontFamily:"'DM Sans',sans-serif"}}
         onClick={e=>e.stopPropagation()}>
 
-        {/* Header */}
+        {/* ── Header ── */}
         <div style={{padding:'18px 24px',borderBottom:'1px solid #f0f0f0',flexShrink:0,
           display:'flex',alignItems:'flex-start',justifyContent:'space-between'}}>
           <div>
@@ -901,137 +906,132 @@ function CompletionStatusModal({ quotation, user, onClose }) {
             width:32,height:32,cursor:'pointer',fontSize:16,color:'#888',flexShrink:0}}>✕</button>
         </div>
 
-        <div style={{flex:1,overflowY:'auto',padding:'20px 24px'}}>
+        <div style={{flex:1,overflowY:'auto',padding:'16px 20px'}}>
 
-          {/* Stage dates table */}
-          <div style={{marginBottom:24}}>
+          {/* ── Stage table with individual % sliders ── */}
+          <div style={{marginBottom:20}}>
             <div style={{fontSize:11,fontWeight:800,color:'#888',textTransform:'uppercase',
-              letterSpacing:0.8,marginBottom:12}}>Work Stages — Start & End Dates</div>
-            <div style={{border:'1px solid #f0f0f0',borderRadius:12,overflow:'hidden'}}>
-              {/* Table header */}
-              <div style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',
-                background:'#fafafa',borderBottom:'2px solid #E8471C',padding:'8px 14px',gap:8}}>
+              letterSpacing:0.8,marginBottom:10}}>Work Stages — Individual Completion %</div>
+
+            <div style={{border:'1px solid #f0f0f0',borderRadius:14,overflow:'hidden',
+              boxShadow:'0 2px 8px rgba(0,0,0,0.05)'}}>
+              {/* Header row */}
+              <div style={{display:'grid',gridTemplateColumns:'1.6fr 80px 1fr 1fr',gap:8,
+                background:'#fafafa',borderBottom:'2px solid #E8471C',padding:'9px 14px'}}>
                 <div style={{fontSize:10,fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:0.5}}>Stage</div>
+                <div style={{fontSize:10,fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:0.5,textAlign:'center'}}>Done %</div>
                 <div style={{fontSize:10,fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:0.5}}>Start Date</div>
                 <div style={{fontSize:10,fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:0.5}}>End Date</div>
               </div>
+
               {/* Stage rows */}
               {STAGES.map((s, i) => {
-                const sd = stageDates[s.key] || {};
-                const done = sd.start && sd.end;
+                const sd  = stageDates[s.key] || {};
+                const sp  = stagePcts[s.key]  ?? 0;
+                const sc  = C(sp);
                 return (
-                  <div key={s.key} style={{display:'grid',gridTemplateColumns:'2fr 1fr 1fr',
-                    padding:'10px 14px',gap:8,alignItems:'center',
-                    background: i%2===0 ? '#fff' : '#fafafa',
-                    borderBottom: i < STAGES.length-1 ? '1px solid #f5f5f5' : 'none'}}>
-                    {/* Stage label */}
+                  <div key={s.key}
+                    style={{display:'grid',gridTemplateColumns:'1.6fr 80px 1fr 1fr',gap:8,
+                      padding:'10px 14px',alignItems:'center',
+                      background:i%2===0?'#fff':'#fafafa',
+                      borderBottom:i<STAGES.length-1?'1px solid #f0f0f0':'none'}}>
+
+                    {/* Stage name */}
                     <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{fontSize:16}}>{s.icon}</span>
+                      <span style={{fontSize:18,flexShrink:0}}>{s.icon}</span>
                       <div>
                         <div style={{fontSize:13,fontWeight:600,color:'#1a1a1a'}}>{s.label}</div>
-                        {done && (
-                          <div style={{fontSize:10,color:'#15803d',fontWeight:600,marginTop:1}}>✓ Dates set</div>
-                        )}
+                        {/* Mini progress bar */}
+                        <div style={{height:4,background:'#f0f0f0',borderRadius:99,marginTop:4,width:100,overflow:'hidden'}}>
+                          <div style={{height:'100%',width:sp+'%',background:sc,borderRadius:99,transition:'width 0.3s'}}/>
+                        </div>
                       </div>
                     </div>
+
+                    {/* % input + slider */}
+                    <div style={{textAlign:'center'}}>
+                      <div style={{fontFamily:'monospace',fontWeight:800,fontSize:15,color:sc,marginBottom:3}}>{sp}%</div>
+                      <input type="range" min="0" max="100" step="5" value={sp}
+                        onChange={e=>setStagePcts(prev=>({...prev,[s.key]:Number(e.target.value)}))}
+                        style={{width:'100%',accentColor:sc,cursor:'pointer',height:4}}
+                      />
+                    </div>
+
                     {/* Start date */}
-                    <div>
-                      <input type="date" value={sd.start||''} style={IS}
-                        onChange={e=>setStage(s.key,'start',e.target.value)}
-                        onFocus={e=>e.target.style.borderColor='#E8471C'}
-                        onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
-                    </div>
+                    <input type="date" value={sd.start||''} style={IS}
+                      onChange={e=>setStageDate(s.key,'start',e.target.value)}
+                      onFocus={e=>e.target.style.borderColor='#E8471C'}
+                      onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
+
                     {/* End date */}
-                    <div>
-                      <input type="date" value={sd.end||''} style={IS}
-                        onChange={e=>setStage(s.key,'end',e.target.value)}
-                        onFocus={e=>e.target.style.borderColor='#E8471C'}
-                        onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
-                    </div>
+                    <input type="date" value={sd.end||''} style={IS}
+                      onChange={e=>setStageDate(s.key,'end',e.target.value)}
+                      onFocus={e=>e.target.style.borderColor='#E8471C'}
+                      onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
                   </div>
                 );
               })}
+
+              {/* ── Average row at bottom ── */}
+              <div style={{display:'grid',gridTemplateColumns:'1.6fr 80px 1fr 1fr',gap:8,
+                padding:'12px 14px',alignItems:'center',
+                background:'#1a1a1a',borderTop:'2px solid #E8471C'}}>
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{fontSize:18}}>📊</span>
+                  <div>
+                    <div style={{fontSize:13,fontWeight:800,color:'#fff'}}>Average (Auto)</div>
+                    <div style={{fontSize:10,color:'#aaa',marginTop:1}}>{avgLabel}</div>
+                  </div>
+                </div>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontFamily:'monospace',fontWeight:900,fontSize:20,color:avgColor}}>{avgPct}%</div>
+                </div>
+                <div style={{gridColumn:'3/5'}}>
+                  <div style={{height:8,background:'#333',borderRadius:99,overflow:'hidden'}}>
+                    <div style={{height:'100%',width:avgPct+'%',background:avgColor,borderRadius:99,transition:'width 0.4s'}}/>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Overall completion drag bar */}
-          <div style={{background:'#fff8f5',border:'1.5px solid rgba(232,71,28,0.2)',
-            borderRadius:14,padding:'18px 20px',marginBottom:20}}>
-            <div style={{fontSize:11,fontWeight:800,color:'#888',textTransform:'uppercase',
-              letterSpacing:0.8,marginBottom:14}}>Overall Project Completion</div>
-
-            {/* Big pct */}
-            <div style={{textAlign:'center',marginBottom:16}}>
-              <div style={{fontSize:56,fontWeight:800,color,lineHeight:1,transition:'color 0.3s'}}>{pct}%</div>
-              <div style={{fontSize:13,fontWeight:700,color,marginTop:4}}>{label}</div>
-            </div>
-
-            {/* Track */}
-            <div style={{marginBottom:12}}>
-              <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#ccc',marginBottom:6}}>
-                <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
-              </div>
-              <div ref={trackRef} onMouseDown={dragHandler}
-                onClick={e=>{ const rect=trackRef.current.getBoundingClientRect(); setPct(Math.round(Math.max(0,Math.min((e.clientX-rect.left)/rect.width,1))*100)); }}
-                style={{height:28,background:'#f0f0f0',borderRadius:99,cursor:'pointer',
-                  position:'relative',userSelect:'none',border:'2px solid #e0e0e0'}}>
-                <div style={{position:'absolute',left:0,top:0,bottom:0,borderRadius:99,
-                  width:pct+'%',background:`linear-gradient(90deg,${color},${color}cc)`,
-                  transition:dragging?'none':'width 0.3s',minWidth:pct>0?28:0}}/>
-                {[25,50,75].map(m=>(
-                  <div key={m} style={{position:'absolute',left:m+'%',top:'50%',
-                    transform:'translate(-50%,-50%)',width:2,height:14,
-                    background:pct>=m?'rgba(255,255,255,0.7)':'#ccc',borderRadius:99}}/>
-                ))}
-                <div onMouseDown={dragHandler}
-                  style={{position:'absolute',left:pct+'%',top:'50%',
-                    transform:'translate(-50%,-50%)',width:30,height:30,
-                    background:'#fff',borderRadius:'50%',border:`3px solid ${color}`,
-                    boxShadow:'0 2px 8px rgba(0,0,0,0.2)',cursor:'grab',
-                    transition:dragging?'none':'left 0.15s'}}/>
-              </div>
-            </div>
-
-            {/* Presets */}
-            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:14}}>
-              {[0,10,25,50,75,90,100].map(v=>(
-                <button key={v} onClick={()=>setPct(v)}
-                  style={{padding:'4px 10px',border:`1.5px solid ${pct===v?color:'#e0e0e0'}`,
-                    borderRadius:6,background:pct===v?color:'#fff',
-                    color:pct===v?'#fff':'#555',fontSize:12,fontWeight:600,cursor:'pointer'}}>
-                  {v}%
-                </button>
-              ))}
-            </div>
-
-            {/* Notes */}
-            <div>
-              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#888',
-                textTransform:'uppercase',letterSpacing:0.5,marginBottom:5}}>Notes</label>
-              <textarea value={notes} onChange={e=>setNotes(e.target.value)}
-                placeholder="e.g. Carpentry 80% done, painting pending…"
-                style={{width:'100%',padding:'9px 12px',border:'1.5px solid #e8e8e8',
-                  borderRadius:8,fontSize:13,fontFamily:"'DM Sans',sans-serif",
-                  outline:'none',resize:'vertical',minHeight:60,boxSizing:'border-box'}}
-                onFocus={e=>e.target.style.borderColor='#E8471C'}
-                onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
-            </div>
+          {/* ── Notes ── */}
+          <div style={{marginBottom:16}}>
+            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#888',
+              textTransform:'uppercase',letterSpacing:0.5,marginBottom:5}}>Notes</label>
+            <textarea value={notes} onChange={e=>setNotes(e.target.value)}
+              placeholder="e.g. Carpentry 80% done, painting pending…"
+              style={{width:'100%',padding:'9px 12px',border:'1.5px solid #e8e8e8',
+                borderRadius:8,fontSize:13,fontFamily:"'DM Sans',sans-serif",
+                outline:'none',resize:'vertical',minHeight:56,boxSizing:'border-box'}}
+              onFocus={e=>e.target.style.borderColor='#E8471C'}
+              onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
           </div>
 
         </div>
 
-        {/* Footer */}
-        <div style={{padding:'14px 24px',borderTop:'1px solid #f0f0f0',flexShrink:0,
-          display:'flex',gap:10}}>
+        {/* ── Footer ── */}
+        <div style={{padding:'14px 20px',borderTop:'1px solid #f0f0f0',flexShrink:0,
+          display:'flex',gap:10,alignItems:'center',background:'#fafafa',borderRadius:'0 0 18px 18px'}}>
+          {/* Average display */}
+          <div style={{flex:1}}>
+            <div style={{fontSize:10,color:'#aaa',marginBottom:2}}>Auto-calculated Average</div>
+            <div style={{display:'flex',alignItems:'center',gap:8}}>
+              <div style={{fontFamily:'monospace',fontWeight:900,fontSize:22,color:avgColor}}>{avgPct}%</div>
+              <div style={{flex:1,height:6,background:'#e0e0e0',borderRadius:99,overflow:'hidden'}}>
+                <div style={{height:'100%',width:avgPct+'%',background:avgColor,borderRadius:99,transition:'width 0.4s'}}/>
+              </div>
+            </div>
+          </div>
           <button onClick={handleSave} disabled={saving}
-            style={{flex:1,padding:12,background:color,color:'#fff',border:'none',
+            style={{padding:'11px 20px',background:avgColor,color:'#fff',border:'none',
               borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',
-              opacity:saving?0.7:1,transition:'background 0.3s'}}>
-            {saving?'Saving…':`✅ Save — ${pct}% Complete`}
+              opacity:saving?0.7:1,whiteSpace:'nowrap',flexShrink:0}}>
+            {saving?'Saving…':'✅ Save'}
           </button>
           <button onClick={onClose}
-            style={{padding:'12px 20px',background:'#f5f5f5',border:'none',
-              borderRadius:10,fontWeight:600,cursor:'pointer',color:'#666',fontSize:14}}>
+            style={{padding:'11px 18px',background:'#f0f0f0',border:'none',
+              borderRadius:10,fontWeight:600,cursor:'pointer',color:'#666',fontSize:14,flexShrink:0}}>
             Cancel
           </button>
         </div>
@@ -3391,7 +3391,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   const canDelete = isAdmin;
   // Per-quotation permission checks (pass the quotation object)
   const isUnbooked      = (q) => (q.project_status||'Unbooked') === 'Unbooked';
-  const canEdit         = (q) => isAdmin || (isManager && (isUnbooked(q) || approvedEdits.includes(q.id)));
+  const canEdit         = (q) => isAdmin || (isManager && (isUnbooked(q) || approvedEdits.includes(q.id))); // admin can edit ALL
 
   // Action button style helper
   const actBtn = (bg, color) => ({
@@ -3449,10 +3449,11 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   };
   const handleDelete   = async (id) => { if (!canDelete) { toast.error('Only admins can delete quotations'); return; } if (!window.confirm('Delete this quotation?')) return; await api.delete(`/quotations/${id}`); toast.success('Deleted'); fetchAll(); };
   const handleStatusChange = async (id, status) => {
-    // Only block non-admins from changing a Booked project
+    // Admin can change ANY status freely
+    // Non-admins cannot change Booked projects back
     const current = quotations.find(q => q.id === id);
     if (!isAdmin && (current?.project_status || 'Unbooked') === 'Booked') {
-      toast.error('🔒 This project is Booked and cannot be changed back.');
+      toast.error('🔒 This project is Booked. Request admin to change status.');
       return;
     }
     // Optimistically update UI
@@ -3776,7 +3777,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
             </button>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:0}}>
-            {bookedQ.slice(0,6).map((q, idx) => {
+            {bookedQ.map((q, idx) => {
               const paid    = Number(q.paid_total||0);
               const total   = Number(q.grand_total||0);
               const balance = total - paid;
@@ -3833,12 +3834,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
               );
             })}
           </div>
-          {bookedQ.length > 6 && (
-            <div style={{padding:'10px 20px',borderTop:'1px solid #f0f0f0',
-              textAlign:'center',fontSize:12,color:'#888',background:'#fafafa'}}>
-              +{bookedQ.length - 6} more booked projects — view all in the table below
-            </div>
-          )}
+
         </div>
       )}
 
@@ -3850,12 +3846,24 @@ export default function QuotationList({ user = { role: 'admin' } }) {
         <div className="table-card">
           <table className="list-table">
             <colgroup><col className="col-id"/><col className="col-name"/><col className="col-loc"/><col className="col-mobile"/>{isAdmin&&<col className="col-manager"/>}{isAdmin&&<col style={{minWidth:90}}/>}<col className="col-total"/><col className="col-paid"/><col className="col-balance"/><col className="col-status"/><col className="col-date"/><col className="col-actions" style={{width:110}}/><col style={{width:70,minWidth:70}}/></colgroup>
-            <thead><tr><th className="col-id">QID</th><th className="col-name">Customer</th><th className="col-loc">Location</th><th className="col-mobile">Mobile</th>{isAdmin&&<th className="col-manager">Manager</th>}{isAdmin&&<th style={{fontSize:11,minWidth:90}}>Branch</th>}<th className="col-total">Grand Total</th><th className="col-paid">Paid</th><th className="col-balance">Balance</th><th className="col-status">Status</th><th className="col-date" style={{whiteSpace:'nowrap'}}>Date / Project</th><th className="col-actions">Actions</th><th style={{fontSize:10,fontWeight:700,textAlign:'center',width:70,padding:'8px 4px',whiteSpace:'nowrap'}}>% Done</th></tr></thead>
+            <thead><tr><th className="col-id">QID</th><th className="col-name">Customer / Site</th><th className="col-loc">Location</th><th className="col-mobile">Mobile</th>{isAdmin&&<th className="col-manager">Manager</th>}{isAdmin&&<th style={{fontSize:11,minWidth:90}}>Branch</th>}<th className="col-total">Grand Total</th><th className="col-paid">Paid</th><th className="col-balance">Balance</th><th className="col-status">Status</th><th className="col-date" style={{whiteSpace:'nowrap'}}>Date / Project</th><th className="col-actions">Actions</th><th style={{fontSize:10,fontWeight:700,textAlign:'center',width:70,padding:'8px 4px',whiteSpace:'nowrap'}}>% Done</th></tr></thead>
             <tbody>
               {filtered.map((q,idx)=>(
                 <tr key={q.id} className="list-row" style={{animationDelay:`${idx*0.04}s`}}>
                   <td className="id-cell col-id" style={{fontWeight:700,color:'#E8471C'}}>#{q.quotation_id||q.id}</td>
-                  <td className="name-cell col-name"><div className="name-inner"><div className="name-avatar">{q.customer_name.charAt(0).toUpperCase()}</div><span>{q.customer_name}</span></div></td>
+                  <td className="name-cell col-name">
+                    <div className="name-inner">
+                      <div className="name-avatar">{q.customer_name.charAt(0).toUpperCase()}</div>
+                      <div>
+                        <div style={{fontWeight:600,fontSize:13,color:'#1a1a1a',lineHeight:1.3}}>{q.customer_name}</div>
+                        {q.site_name && (
+                          <div style={{fontSize:11,color:'#E8471C',fontWeight:600,marginTop:2}}>
+                            🏠 {q.site_name}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </td>
                   <td className="loc-cell col-loc"><span className="loc-text">{q.location||'—'}</span></td>
                   <td className="phone-cell col-mobile">{q.mobile}</td>
                   {isAdmin&&<td className="col-manager" style={{fontSize:12,color:'#555',fontWeight:600}}>{q.site_manager_name||'—'}</td>}

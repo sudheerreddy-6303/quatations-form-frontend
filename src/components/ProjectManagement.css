@@ -323,3 +323,61 @@
   .lh-total { display:none; }
   .pm-submit-btn { width:100%; margin-left:0; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   PROJECT MANAGEMENT MOBILE
+═══════════════════════════════════════════════════════════════ */
+
+@media (max-width: 768px) {
+  .pm-modal {
+    width: 100vw !important;
+    height: 100vh !important;
+    border-radius: 0 !important;
+    max-width: 100% !important;
+  }
+  .pm-overlay { padding: 0; }
+  .pm-header { padding: 14px 16px; }
+  .pm-title { font-size: 16px; }
+  .pm-body { padding: 12px; }
+  .pm-project-list { gap: 10px; }
+  .pm-project-card { padding: 12px 14px; }
+  .pm-project-name { font-size: 13px; }
+  .pm-project-meta { font-size: 11px; }
+  .pm-search { font-size: 13px; }
+}
+
+@media (max-width: 480px) {
+  .pm-header { padding: 10px 12px; }
+  .pm-body { padding: 8px; }
+  .pm-title { font-size: 14px; }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PROJECT MANAGEMENT — MOBILE
+══════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .pm-overlay { padding: 0; align-items: flex-end; }
+  .pm-modal {
+    width: 100% !important;
+    height: 95vh !important;
+    max-width: 100% !important;
+    border-radius: 20px 20px 0 0 !important;
+  }
+  .pm-header { padding: 14px 16px; }
+  .pm-title { font-size: 16px; }
+  .pm-subtitle { font-size: 11px; }
+  .pm-body { padding: 12px; }
+  .pm-search { font-size: 14px; }
+  .pm-project-card { padding: 12px 14px; }
+  .pm-project-name { font-size: 13px; }
+
+  /* Order form */
+  .order-meta-grid { grid-template-columns: 1fr !important; }
+  .section-row-grid { grid-template-columns: 2fr 0.7fr 0.8fr 1fr 1fr 28px !important; }
+}
+
+@media (max-width: 480px) {
+  .pm-modal { height: 100vh !important; border-radius: 0 !important; }
+  .pm-header { padding: 12px; }
+  input, select { font-size: 16px !important; }
+}
