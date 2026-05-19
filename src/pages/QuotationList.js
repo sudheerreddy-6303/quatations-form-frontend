@@ -824,43 +824,65 @@ function VisitReportModal({ quotation, user, onClose }) {
 ══════════════════════════════════════════════════════════════ */
 function CompletionStatusModal({ quotation, user, onClose }) {
   const STAGES = [
-    { key:'design',        label:'Design',              icon:'🎨' },
-    { key:'electrical',    label:'Electrical',          icon:'⚡' },
-    { key:'false_ceiling', label:'False Ceiling',       icon:'🏗️' },
-    { key:'carcase',       label:'Carcase Fitting',     icon:'🪵' },
-    { key:'door_fitting',  label:'Door Fitting',        icon:'🚪' },
-    { key:'accessories',   label:'Accessories Fitting', icon:'🔩' },
-    { key:'deep_cleaning', label:'Deep Cleaning',       icon:'🧹' },
-    { key:'furnishing',    label:'Furnishing & Cleaning',icon:'🛋️'},
+    { key:'design',       label:'Design',           icon:'🎨' },
+    { key:'electrical',   label:'Electrical',       icon:'⚡' },
+    { key:'false_ceiling',label:'False Ceiling',    icon:'🏗️' },
+    { key:'carcase',      label:'Carcase Fitting',  icon:'🪵' },
+    { key:'door_fitting', label:'Door Fitting',     icon:'🚪' },
+    { key:'accessories',  label:'Accessories Fitting',icon:'🔩'},
+    { key:'deep_cleaning',label:'Deep Cleaning',    icon:'🧹' },
+    { key:'furnishing',   label:'Furnishing & Cleaning',icon:'🛋️'},
   ];
 
-  const [stageDates, setStageDates] = React.useState({});
-  const [stagePcts,  setStagePcts]  = React.useState({}); // per-stage %
+  const [pct,        setPct]        = React.useState(0);
   const [notes,      setNotes]      = React.useState('');
+  const [stageDates, setStageDates] = React.useState({});
   const [loading,    setLoading]    = React.useState(true);
   const [saving,     setSaving]     = React.useState(false);
+  const [dragging,   setDragging]   = React.useState(false);
+  const trackRef = React.useRef();
 
-  // ── Auto-calculate average from all stage %s ──
-  const avgPct = Math.round(
-    STAGES.reduce((sum, s) => sum + (stagePcts[s.key] ?? 0), 0) / STAGES.length
-  );
-  const C = (p) => p>=100?'#15803d':p>=75?'#10B981':p>=50?'#F59E0B':p>=25?'#E8471C':'#EF4444';
-  const avgColor = C(avgPct);
-  const avgLabel = avgPct>=100?'🎉 Completed!':avgPct>=75?'Almost Done':avgPct>=50?'Halfway There':avgPct>=25?'In Progress':'Just Started';
+  const DRAFT_KEY = 'completion_draft_' + quotation.id;
 
   React.useEffect(() => {
+    // First load from DB
     api.get('/completion-status/' + quotation.id)
       .then(r => {
         const d = r.data.data || {};
+        // Check if there's a newer draft saved locally
+        try {
+          const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}');
+          if (draft.savedAt && d.updated_at) {
+            const draftTime = new Date(draft.savedAt).getTime();
+            const dbTime    = new Date(d.updated_at).getTime();
+            if (draftTime > dbTime && Object.keys(draft.stageDates||{}).length > 0) {
+              // Draft is newer — use it
+              setPct(draft.pct ?? d.percentage ?? 0);
+              setNotes(draft.notes ?? d.notes ?? '');
+              setStageDates(draft.stageDates ?? d.stage_dates ?? {});
+              setLoading(false);
+              return;
+            }
+          }
+        } catch {}
+        // Use DB data
+        setPct(d.percentage || 0);
+        setNotes(d.notes || '');
         setStageDates(d.stage_dates || {});
-        setStagePcts(d.stage_pcts   || {});
-        setNotes(d.notes            || '');
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+  // eslint-disable-line
   }, [quotation.id]);
 
-  const setStageDate = (key, field, val) =>
+  // Auto-save draft to localStorage whenever data changes
+  React.useEffect(() => {
+    if (loading) return;
+    const draft = { pct, notes, stageDates, savedAt: new Date().toISOString() };
+    try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch {}
+  }, [pct, notes, stageDates, loading]);
+
+  const setStage = (key, field, val) =>
     setStageDates(prev => ({ ...prev, [key]: { ...(prev[key]||{}), [field]: val } }));
 
   const handleSave = async () => {
@@ -868,170 +890,257 @@ function CompletionStatusModal({ quotation, user, onClose }) {
     try {
       await api.post('/completion-status', {
         quotation_id: quotation.id,
-        percentage:   avgPct,       // save the auto-calculated average
+        percentage:   pct,
         notes,
         stage_dates:  stageDates,
-        stage_pcts:   stagePcts,
         updated_by:   user?.display || user?.username || '',
       });
-      // Bust CompletionBar cache so dashboard refreshes
-      Object.keys(_cc).forEach(k => { if (String(k) === String(quotation.id)) delete _cc[k]; });
-      toast.success(`Saved — ${avgPct}% average complete!`);
+      // Clear local draft after successful save
+      try { localStorage.removeItem(DRAFT_KEY); } catch {}
+      toast.success(`Saved — ${pct}% complete!`);
       onClose();
     } catch { toast.error('Failed to save.'); }
     setSaving(false);
   };
 
+  const dragHandler = (e) => {
+    e.preventDefault();
+    setDragging(true);
+    const calc = (ev) => {
+      if (!trackRef.current) return;
+      const rect = trackRef.current.getBoundingClientRect();
+      setPct(Math.round(Math.max(0, Math.min((ev.clientX - rect.left) / rect.width, 1)) * 100));
+    };
+    calc(e);
+    const move = ev => calc(ev);
+    const up   = () => { setDragging(false); document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  };
+
+  const color = pct>=100?'#15803d':pct>=75?'#10B981':pct>=50?'#F59E0B':pct>=25?'#E8471C':'#EF4444';
+  const label = pct>=100?'🎉 Completed!':pct>=75?'Almost Done':pct>=50?'Halfway There':pct>=25?'In Progress':'Just Started';
+
   if (loading) return null;
 
-  const IS  = { padding:'6px 8px', border:'1.5px solid #e8e8e8', borderRadius:7, fontSize:12,
+  const IS = { padding:'6px 8px', border:'1.5px solid #e8e8e8', borderRadius:7, fontSize:12,
     fontFamily:"'DM Sans',sans-serif", outline:'none', background:'#fff', width:'100%', boxSizing:'border-box' };
 
   return (
     <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.6)',zIndex:9999,
-      display:'flex',alignItems:'center',justifyContent:'center',padding:12}} onClick={onClose}>
-      <div style={{background:'#fff',borderRadius:18,width:'100%',maxWidth:660,
-        maxHeight:'94vh',display:'flex',flexDirection:'column',
-        boxShadow:'0 24px 60px rgba(0,0,0,0.25)',fontFamily:"'DM Sans',sans-serif"}}
-        onClick={e=>e.stopPropagation()}>
+      display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+      <div style={{background:'#fff',borderRadius:18,width:'100%',maxWidth:620,
+        maxHeight:'92vh',display:'flex',flexDirection:'column',
+        boxShadow:'0 24px 60px rgba(0,0,0,0.25)',fontFamily:"'DM Sans',sans-serif"}}>
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div style={{padding:'18px 24px',borderBottom:'1px solid #f0f0f0',flexShrink:0,
           display:'flex',alignItems:'flex-start',justifyContent:'space-between'}}>
           <div>
             <div style={{fontWeight:800,fontSize:18,color:'#1a1a1a'}}>📊 Completion Status</div>
-            <div style={{fontSize:12,color:'#aaa',marginTop:3}}>{quotation.site_name||quotation.customer_name}</div>
+            <div style={{fontSize:12,color:'#aaa',marginTop:3,display:'flex',alignItems:'center',gap:8}}>
+              {quotation.site_name||quotation.customer_name}
+              {!loading && (
+                <span style={{fontSize:10,background:'#FEF9E6',color:'#B45309',border:'1px solid #FCD34D',
+                  borderRadius:6,padding:'1px 7px',fontWeight:700}}>
+                  Draft auto-saved
+                </span>
+              )}
+            </div>
           </div>
           <button onClick={onClose} style={{background:'#f5f5f5',border:'none',borderRadius:8,
             width:32,height:32,cursor:'pointer',fontSize:16,color:'#888',flexShrink:0}}>✕</button>
         </div>
 
-        <div style={{flex:1,overflowY:'auto',padding:'16px 20px'}}>
+        <div style={{flex:1,overflowY:'auto',padding:'20px 24px'}}>
 
-          {/* ── Stage table with individual % sliders ── */}
-          <div style={{marginBottom:20}}>
+          {/* Stage dates table */}
+          <div style={{marginBottom:24}}>
             <div style={{fontSize:11,fontWeight:800,color:'#888',textTransform:'uppercase',
-              letterSpacing:0.8,marginBottom:10}}>Work Stages — Individual Completion %</div>
-
-            <div style={{border:'1px solid #f0f0f0',borderRadius:14,overflow:'hidden',
-              boxShadow:'0 2px 8px rgba(0,0,0,0.05)'}}>
-              {/* Header row */}
-              <div style={{display:'grid',gridTemplateColumns:'1.6fr 80px 1fr 1fr',gap:8,
-                background:'#fafafa',borderBottom:'2px solid #E8471C',padding:'9px 14px'}}>
+              letterSpacing:0.8,marginBottom:12}}>Work Stages — Start & End Dates</div>
+            <div style={{border:'1px solid #f0f0f0',borderRadius:12,overflow:'hidden'}}>
+              {/* Table header */}
+              <div style={{display:'grid',gridTemplateColumns:'1.8fr 1fr 1fr 72px',
+                background:'#fafafa',borderBottom:'2px solid #E8471C',padding:'8px 14px',gap:8}}>
                 <div style={{fontSize:10,fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:0.5}}>Stage</div>
-                <div style={{fontSize:10,fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:0.5,textAlign:'center'}}>Done %</div>
                 <div style={{fontSize:10,fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:0.5}}>Start Date</div>
                 <div style={{fontSize:10,fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:0.5}}>End Date</div>
+                <div style={{fontSize:10,fontWeight:700,color:'#888',textTransform:'uppercase',letterSpacing:0.5,textAlign:'center'}}>Days</div>
               </div>
-
               {/* Stage rows */}
               {STAGES.map((s, i) => {
-                const sd  = stageDates[s.key] || {};
-                const sp  = stagePcts[s.key]  ?? 0;
-                const sc  = C(sp);
+                const sd = stageDates[s.key] || {};
+                // Calculate days worked between start and end
+                const calcDays = (start, end) => {
+                  if (!start || !end) return null;
+                  const d1 = new Date(start + 'T00:00:00');
+                  const d2 = new Date(end   + 'T00:00:00');
+                  const diff = Math.round((d2 - d1) / (1000*60*60*24));
+                  return diff >= 0 ? diff : null;
+                };
+                const days = calcDays(sd.start, sd.end);
                 return (
-                  <div key={s.key}
-                    style={{display:'grid',gridTemplateColumns:'1.6fr 80px 1fr 1fr',gap:8,
-                      padding:'10px 14px',alignItems:'center',
-                      background:i%2===0?'#fff':'#fafafa',
-                      borderBottom:i<STAGES.length-1?'1px solid #f0f0f0':'none'}}>
-
-                    {/* Stage name */}
+                  <div key={s.key} style={{display:'grid',gridTemplateColumns:'1.8fr 1fr 1fr 72px',
+                    padding:'10px 14px',gap:8,alignItems:'center',
+                    background: i%2===0 ? '#fff' : '#fafafa',
+                    borderBottom: i < STAGES.length-1 ? '1px solid #f5f5f5' : 'none'}}>
+                    {/* Stage label */}
                     <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{fontSize:18,flexShrink:0}}>{s.icon}</span>
+                      <span style={{fontSize:16,flexShrink:0}}>{s.icon}</span>
                       <div>
                         <div style={{fontSize:13,fontWeight:600,color:'#1a1a1a'}}>{s.label}</div>
-                        {/* Mini progress bar */}
-                        <div style={{height:4,background:'#f0f0f0',borderRadius:99,marginTop:4,width:100,overflow:'hidden'}}>
-                          <div style={{height:'100%',width:sp+'%',background:sc,borderRadius:99,transition:'width 0.3s'}}/>
-                        </div>
+                        {days !== null && (
+                          <div style={{fontSize:10,color:'#15803d',fontWeight:600,marginTop:1}}>✓ {days} day{days!==1?'s':''}</div>
+                        )}
                       </div>
                     </div>
-
-                    {/* % input + slider */}
-                    <div style={{textAlign:'center'}}>
-                      <div style={{fontFamily:'monospace',fontWeight:800,fontSize:15,color:sc,marginBottom:3}}>{sp}%</div>
-                      <input type="range" min="0" max="100" step="5" value={sp}
-                        onChange={e=>setStagePcts(prev=>({...prev,[s.key]:Number(e.target.value)}))}
-                        style={{width:'100%',accentColor:sc,cursor:'pointer',height:4}}
-                      />
-                    </div>
-
                     {/* Start date */}
-                    <input type="date" value={sd.start||''} style={IS}
-                      onChange={e=>setStageDate(s.key,'start',e.target.value)}
-                      onFocus={e=>e.target.style.borderColor='#E8471C'}
-                      onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
-
+                    <div>
+                      <input type="date" value={sd.start||''} style={IS}
+                        onChange={e=>setStage(s.key,'start',e.target.value)}
+                        onFocus={e=>e.target.style.borderColor='#E8471C'}
+                        onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
+                    </div>
                     {/* End date */}
-                    <input type="date" value={sd.end||''} style={IS}
-                      onChange={e=>setStageDate(s.key,'end',e.target.value)}
-                      onFocus={e=>e.target.style.borderColor='#E8471C'}
-                      onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
+                    <div>
+                      <input type="date" value={sd.end||''} style={IS}
+                        onChange={e=>setStage(s.key,'end',e.target.value)}
+                        onFocus={e=>e.target.style.borderColor='#E8471C'}
+                        onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
+                    </div>
+                    {/* Days worked */}
+                    <div style={{textAlign:'center'}}>
+                      {days !== null ? (
+                        <div style={{
+                          background: days===0?'#FEF9E6':days<=7?'#F0FDF4':days<=14?'#EFF6FF':'#FFF0F0',
+                          border: `1.5px solid ${days===0?'#FCD34D':days<=7?'#86EFAC':days<=14?'#BFDBFE':'#FECACA'}`,
+                          borderRadius:8,padding:'4px 6px',display:'inline-block',minWidth:52,
+                        }}>
+                          <div style={{
+                            fontFamily:'monospace',fontWeight:800,fontSize:14,
+                            color: days===0?'#B45309':days<=7?'#15803D':days<=14?'#1D4ED8':'#B91C1C',
+                            lineHeight:1,
+                          }}>{days}</div>
+                          <div style={{fontSize:9,color:'#888',marginTop:1,fontWeight:600}}>day{days!==1?'s':''}</div>
+                        </div>
+                      ) : (
+                        <div style={{color:'#ddd',fontSize:12}}>—</div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
 
-              {/* ── Average row at bottom ── */}
-              <div style={{display:'grid',gridTemplateColumns:'1.6fr 80px 1fr 1fr',gap:8,
-                padding:'12px 14px',alignItems:'center',
-                background:'#1a1a1a',borderTop:'2px solid #E8471C'}}>
-                <div style={{display:'flex',alignItems:'center',gap:8}}>
-                  <span style={{fontSize:18}}>📊</span>
-                  <div>
-                    <div style={{fontSize:13,fontWeight:800,color:'#fff'}}>Average (Auto)</div>
-                    <div style={{fontSize:10,color:'#aaa',marginTop:1}}>{avgLabel}</div>
+              {/* Total days row */}
+              {(() => {
+                const totalDays = STAGES.reduce((sum, s) => {
+                  const sd = stageDates[s.key] || {};
+                  if (!sd.start || !sd.end) return sum;
+                  const d = Math.round((new Date(sd.end+'T00:00:00') - new Date(sd.start+'T00:00:00'))/(1000*60*60*24));
+                  return sum + (d >= 0 ? d : 0);
+                }, 0);
+                const stagesWithDates = STAGES.filter(s => stageDates[s.key]?.start && stageDates[s.key]?.end).length;
+                if (stagesWithDates === 0) return null;
+                return (
+                  <div style={{display:'grid',gridTemplateColumns:'1.8fr 1fr 1fr 72px',
+                    padding:'10px 14px',gap:8,alignItems:'center',
+                    background:'#1a1a1a',borderTop:'2px solid #E8471C'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8}}>
+                      <span style={{fontSize:16}}>📊</span>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:800,color:'#fff'}}>Total Work Days</div>
+                        <div style={{fontSize:10,color:'#aaa',marginTop:1}}>{stagesWithDates} of {STAGES.length} stages set</div>
+                      </div>
+                    </div>
+                    <div style={{gridColumn:'2/4',color:'#aaa',fontSize:11}}>Across all stages</div>
+                    <div style={{textAlign:'center'}}>
+                      <div style={{fontFamily:'monospace',fontWeight:900,fontSize:18,color:'#10B981'}}>{totalDays}</div>
+                      <div style={{fontSize:9,color:'#aaa',fontWeight:600}}>days total</div>
+                    </div>
                   </div>
-                </div>
-                <div style={{textAlign:'center'}}>
-                  <div style={{fontFamily:'monospace',fontWeight:900,fontSize:20,color:avgColor}}>{avgPct}%</div>
-                </div>
-                <div style={{gridColumn:'3/5'}}>
-                  <div style={{height:8,background:'#333',borderRadius:99,overflow:'hidden'}}>
-                    <div style={{height:'100%',width:avgPct+'%',background:avgColor,borderRadius:99,transition:'width 0.4s'}}/>
-                  </div>
-                </div>
-              </div>
+                );
+              })()}
             </div>
           </div>
 
-          {/* ── Notes ── */}
-          <div style={{marginBottom:16}}>
-            <label style={{display:'block',fontSize:11,fontWeight:700,color:'#888',
-              textTransform:'uppercase',letterSpacing:0.5,marginBottom:5}}>Notes</label>
-            <textarea value={notes} onChange={e=>setNotes(e.target.value)}
-              placeholder="e.g. Carpentry 80% done, painting pending…"
-              style={{width:'100%',padding:'9px 12px',border:'1.5px solid #e8e8e8',
-                borderRadius:8,fontSize:13,fontFamily:"'DM Sans',sans-serif",
-                outline:'none',resize:'vertical',minHeight:56,boxSizing:'border-box'}}
-              onFocus={e=>e.target.style.borderColor='#E8471C'}
-              onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
+          {/* Overall completion drag bar */}
+          <div style={{background:'#fff8f5',border:'1.5px solid rgba(232,71,28,0.2)',
+            borderRadius:14,padding:'18px 20px',marginBottom:20}}>
+            <div style={{fontSize:11,fontWeight:800,color:'#888',textTransform:'uppercase',
+              letterSpacing:0.8,marginBottom:14}}>Overall Project Completion</div>
+
+            {/* Big pct */}
+            <div style={{textAlign:'center',marginBottom:16}}>
+              <div style={{fontSize:56,fontWeight:800,color,lineHeight:1,transition:'color 0.3s'}}>{pct}%</div>
+              <div style={{fontSize:13,fontWeight:700,color,marginTop:4}}>{label}</div>
+            </div>
+
+            {/* Track */}
+            <div style={{marginBottom:12}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'#ccc',marginBottom:6}}>
+                <span>0%</span><span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+              </div>
+              <div ref={trackRef} onMouseDown={dragHandler}
+                onClick={e=>{ const rect=trackRef.current.getBoundingClientRect(); setPct(Math.round(Math.max(0,Math.min((e.clientX-rect.left)/rect.width,1))*100)); }}
+                style={{height:28,background:'#f0f0f0',borderRadius:99,cursor:'pointer',
+                  position:'relative',userSelect:'none',border:'2px solid #e0e0e0'}}>
+                <div style={{position:'absolute',left:0,top:0,bottom:0,borderRadius:99,
+                  width:pct+'%',background:`linear-gradient(90deg,${color},${color}cc)`,
+                  transition:dragging?'none':'width 0.3s',minWidth:pct>0?28:0}}/>
+                {[25,50,75].map(m=>(
+                  <div key={m} style={{position:'absolute',left:m+'%',top:'50%',
+                    transform:'translate(-50%,-50%)',width:2,height:14,
+                    background:pct>=m?'rgba(255,255,255,0.7)':'#ccc',borderRadius:99}}/>
+                ))}
+                <div onMouseDown={dragHandler}
+                  style={{position:'absolute',left:pct+'%',top:'50%',
+                    transform:'translate(-50%,-50%)',width:30,height:30,
+                    background:'#fff',borderRadius:'50%',border:`3px solid ${color}`,
+                    boxShadow:'0 2px 8px rgba(0,0,0,0.2)',cursor:'grab',
+                    transition:dragging?'none':'left 0.15s'}}/>
+              </div>
+            </div>
+
+            {/* Presets */}
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:14}}>
+              {[0,10,25,50,75,90,100].map(v=>(
+                <button key={v} onClick={()=>setPct(v)}
+                  style={{padding:'4px 10px',border:`1.5px solid ${pct===v?color:'#e0e0e0'}`,
+                    borderRadius:6,background:pct===v?color:'#fff',
+                    color:pct===v?'#fff':'#555',fontSize:12,fontWeight:600,cursor:'pointer'}}>
+                  {v}%
+                </button>
+              ))}
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label style={{display:'block',fontSize:11,fontWeight:700,color:'#888',
+                textTransform:'uppercase',letterSpacing:0.5,marginBottom:5}}>Notes</label>
+              <textarea value={notes} onChange={e=>setNotes(e.target.value)}
+                placeholder="e.g. Carpentry 80% done, painting pending…"
+                style={{width:'100%',padding:'9px 12px',border:'1.5px solid #e8e8e8',
+                  borderRadius:8,fontSize:13,fontFamily:"'DM Sans',sans-serif",
+                  outline:'none',resize:'vertical',minHeight:60,boxSizing:'border-box'}}
+                onFocus={e=>e.target.style.borderColor='#E8471C'}
+                onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
+            </div>
           </div>
 
         </div>
 
-        {/* ── Footer ── */}
-        <div style={{padding:'14px 20px',borderTop:'1px solid #f0f0f0',flexShrink:0,
-          display:'flex',gap:10,alignItems:'center',background:'#fafafa',borderRadius:'0 0 18px 18px'}}>
-          {/* Average display */}
-          <div style={{flex:1}}>
-            <div style={{fontSize:10,color:'#aaa',marginBottom:2}}>Auto-calculated Average</div>
-            <div style={{display:'flex',alignItems:'center',gap:8}}>
-              <div style={{fontFamily:'monospace',fontWeight:900,fontSize:22,color:avgColor}}>{avgPct}%</div>
-              <div style={{flex:1,height:6,background:'#e0e0e0',borderRadius:99,overflow:'hidden'}}>
-                <div style={{height:'100%',width:avgPct+'%',background:avgColor,borderRadius:99,transition:'width 0.4s'}}/>
-              </div>
-            </div>
-          </div>
+        {/* Footer */}
+        <div style={{padding:'14px 24px',borderTop:'1px solid #f0f0f0',flexShrink:0,
+          display:'flex',gap:10}}>
           <button onClick={handleSave} disabled={saving}
-            style={{padding:'11px 20px',background:avgColor,color:'#fff',border:'none',
+            style={{flex:1,padding:12,background:color,color:'#fff',border:'none',
               borderRadius:10,fontWeight:700,fontSize:14,cursor:'pointer',
-              opacity:saving?0.7:1,whiteSpace:'nowrap',flexShrink:0}}>
-            {saving?'Saving…':'✅ Save'}
+              opacity:saving?0.7:1,transition:'background 0.3s'}}>
+            {saving?'Saving…':`✅ Save — ${pct}% Complete`}
           </button>
           <button onClick={onClose}
-            style={{padding:'11px 18px',background:'#f0f0f0',border:'none',
-              borderRadius:10,fontWeight:600,cursor:'pointer',color:'#666',fontSize:14,flexShrink:0}}>
+            style={{padding:'12px 20px',background:'#f5f5f5',border:'none',
+              borderRadius:10,fontWeight:600,cursor:'pointer',color:'#666',fontSize:14}}>
             Cancel
           </button>
         </div>
@@ -3533,6 +3642,35 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   const totalBookedPaid    = bookedQ.reduce((s,q)=>s+(parseFloat(q.paid_total)||0),0);
   const totalBookedBalance = totalBookedAmt - totalBookedPaid;
 
+  // Calculate SFT from rooms data directly (works even if total_sft not saved yet)
+  const calcSftFromRooms = (q) => {
+    // First try saved total_sft field
+    if (parseFloat(q.total_sft) > 0) return parseFloat(q.total_sft);
+    // Otherwise calculate from rooms JSON
+    try {
+      const rooms = typeof q.rooms === 'string' ? JSON.parse(q.rooms) : q.rooms;
+      if (!rooms || typeof rooms !== 'object') return 0;
+      let sft = 0;
+      for (const [key, room] of Object.entries(rooms)) {
+        if (key === 'accessories' || !room.items) continue;
+        for (const item of room.items) {
+          if (item.type === 'FIXED') continue;
+          const w = parseFloat(item.width) || 0;
+          const h = parseFloat(item.height) || 0;
+          const n = parseFloat(item.nos) || 0;
+          if (w && h && n) sft += (w * h * n) / 144;
+        }
+      }
+      return parseFloat(sft.toFixed(2));
+    } catch { return 0; }
+  };
+  const totalSft = parseFloat(cardBase.reduce((s,q) => s + calcSftFromRooms(q), 0).toFixed(2));
+  const fmtSft   = (v) => {
+    if (!v) return '0 SFT';
+    if (v >= 10000) return (v/1000).toFixed(1) + 'K SFT';
+    return v.toLocaleString('en-IN') + ' SFT';
+  };
+
   const hasFilters = filterBranch!=='All'||filterManager!=='All'||filterFrom||filterTo||filterBudgetMin||filterBudgetMax;
   const clearFilters = () => { setFilterBranch('All');setFilterManager('All');setFilterFrom('');setFilterTo('');setFilterBudgetMin('');setFilterBudgetMax(''); };
 
@@ -3653,7 +3791,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
           { icon:'✅', bg:'#EFF6FF', label:'Booked Projects',   value: bookedCount,    color:'#1D4ED8' },
           { icon:'🔘', bg:'#FFF5F5', label:'Unbooked Projects', value: unbookedCount,  color:'#EF4444' },
           { icon:'💰', bg:'#F0FDF4', label:'Total Amount',      value: fmtAmt(totalGrand),   color:'#10B981', isMoney:true },
-          { icon:'💳', bg:'#FEF9C3', label:'Total Paid',        value: fmtAmt(totalPaid),    color:'#CA8A04', isMoney:true },
+          { icon:'📐', bg:'#F5F3FF', label:'Total SFT',         value: fmtSft(totalSft),     color:'#7C3AED', isMoney:false },
         ].map((c,i)=>(
           <div key={i} style={{background:'#fff',borderRadius:14,padding:'18px 20px',boxShadow:'0 2px 12px rgba(0,0,0,0.07)',border:'1.5px solid #F0F0F0',display:'flex',alignItems:'center',gap:14,minHeight:90}}>
             <div style={{width:52,height:52,borderRadius:12,background:c.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>{c.icon}</div>
@@ -3846,24 +3984,12 @@ export default function QuotationList({ user = { role: 'admin' } }) {
         <div className="table-card">
           <table className="list-table">
             <colgroup><col className="col-id"/><col className="col-name"/><col className="col-loc"/><col className="col-mobile"/>{isAdmin&&<col className="col-manager"/>}{isAdmin&&<col style={{minWidth:90}}/>}<col className="col-total"/><col className="col-paid"/><col className="col-balance"/><col className="col-status"/><col className="col-date"/><col className="col-actions" style={{width:110}}/><col style={{width:70,minWidth:70}}/></colgroup>
-            <thead><tr><th className="col-id">QID</th><th className="col-name">Customer / Site</th><th className="col-loc">Location</th><th className="col-mobile">Mobile</th>{isAdmin&&<th className="col-manager">Manager</th>}{isAdmin&&<th style={{fontSize:11,minWidth:90}}>Branch</th>}<th className="col-total">Grand Total</th><th className="col-paid">Paid</th><th className="col-balance">Balance</th><th className="col-status">Status</th><th className="col-date" style={{whiteSpace:'nowrap'}}>Date / Project</th><th className="col-actions">Actions</th><th style={{fontSize:10,fontWeight:700,textAlign:'center',width:70,padding:'8px 4px',whiteSpace:'nowrap'}}>% Done</th></tr></thead>
+            <thead><tr><th className="col-id">QID</th><th className="col-name">Customer</th><th className="col-loc">Location</th><th className="col-mobile">Mobile</th>{isAdmin&&<th className="col-manager">Manager</th>}{isAdmin&&<th style={{fontSize:11,minWidth:90}}>Branch</th>}<th className="col-total">Grand Total</th><th className="col-paid">Paid</th><th className="col-balance">Balance</th><th className="col-status">Status</th><th className="col-date" style={{whiteSpace:'nowrap'}}>Date / Project</th><th className="col-actions">Actions</th><th style={{fontSize:10,fontWeight:700,textAlign:'center',width:70,padding:'8px 4px',whiteSpace:'nowrap'}}>% Done</th></tr></thead>
             <tbody>
               {filtered.map((q,idx)=>(
                 <tr key={q.id} className="list-row" style={{animationDelay:`${idx*0.04}s`}}>
                   <td className="id-cell col-id" style={{fontWeight:700,color:'#E8471C'}}>#{q.quotation_id||q.id}</td>
-                  <td className="name-cell col-name">
-                    <div className="name-inner">
-                      <div className="name-avatar">{q.customer_name.charAt(0).toUpperCase()}</div>
-                      <div>
-                        <div style={{fontWeight:600,fontSize:13,color:'#1a1a1a',lineHeight:1.3}}>{q.customer_name}</div>
-                        {q.site_name && (
-                          <div style={{fontSize:11,color:'#E8471C',fontWeight:600,marginTop:2}}>
-                            🏠 {q.site_name}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </td>
+                  <td className="name-cell col-name"><div className="name-inner"><div className="name-avatar">{q.customer_name.charAt(0).toUpperCase()}</div><span>{q.customer_name}</span></div></td>
                   <td className="loc-cell col-loc"><span className="loc-text">{q.location||'—'}</span></td>
                   <td className="phone-cell col-mobile">{q.mobile}</td>
                   {isAdmin&&<td className="col-manager" style={{fontSize:12,color:'#555',fontWeight:600}}>{q.site_manager_name||'—'}</td>}
@@ -3909,6 +4035,11 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                         ? <span style={{fontSize:11,color:'#E8471C',fontWeight:700}}>⏹ {new Date(q.project_end_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</span>
                         : <span style={{fontSize:10,color:'#ccc'}}>End: —</span>
                       }
+                      {Number(q.total_sft) > 0 && (
+                        <span style={{fontSize:10,fontWeight:700,color:'#7C3AED',marginTop:1}}>
+                          📐 {Number(q.total_sft).toLocaleString('en-IN')} SFT
+                        </span>
+                      )}
                     </div>
                   </td>
                   <td className="actions-cell col-actions">

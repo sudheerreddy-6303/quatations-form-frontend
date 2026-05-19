@@ -630,6 +630,14 @@ export default function QuotationForm({ user }) {
   Object.entries(sections).forEach(([k, sec]) => { sectionTotals[k] = sec.items.reduce((s, it) => s + calcTotal(it), 0); });
   const totalAllSections = Object.values(sectionTotals).reduce((s, v) => s + v, 0);
   const subtotal       = totalInterior + totalAllSections;
+
+  // SFT calculations — per room and project total
+  const roomSftMap = {};
+  Object.entries(rooms).forEach(([key, room]) => {
+    if (key === 'accessories') { roomSftMap[key] = 0; return; }
+    roomSftMap[key] = parseFloat(room.items.reduce((s, i) => s + calcArea(i), 0).toFixed(2));
+  });
+  const totalProjectSft = parseFloat(Object.values(roomSftMap).reduce((s, v) => s + v, 0).toFixed(2));
   const discountAmount = Math.round(subtotal * discountPercent / 100);
   const afterDiscount  = subtotal - discountAmount;
   const gstAmount      = Math.round(afterDiscount * gstPercent / 100);
@@ -670,7 +678,7 @@ export default function QuotationForm({ user }) {
         rooms: roomsToSave, accessories: roomsToSave.accessories,
         pay_stages: payStages,
         ceiling_data: sections, tc_items: Array.isArray(tcItems) ? tcItems : (typeof tcItems === 'string' ? JSON.parse(tcItems) : []), discount_percent: discountPercent, discount_amount: discountAmount, gst_percent: gstPercent, gst_amount: gstAmount,
-        total_interior: totalInterior, total_ceiling: totalAllSections, grand_total: grandTotal
+        total_interior: totalInterior, total_ceiling: totalAllSections, grand_total: grandTotal, total_sft: totalProjectSft
       };
       const res = await api.post(`/quotations`, payload);
       toast.success(`Quotation #${res.data.quotation_id||res.data.id} saved successfully!`);
@@ -744,6 +752,17 @@ export default function QuotationForm({ user }) {
             <span style={{fontSize:'15px'}}>📋</span> Project Management
           </button>
           <div className="grand-total-badge">
+            {totalProjectSft > 0 && (
+              <div style={{textAlign:'right',marginBottom:8,padding:'6px 10px',
+                background:'rgba(255,255,255,0.12)',borderRadius:8,
+                display:'inline-block',minWidth:'100%'}}>
+                <span style={{fontSize:10,color:'rgba(255,255,255,0.7)',display:'block',marginBottom:2,
+                  textTransform:'uppercase',letterSpacing:0.8}}>Total Project Area</span>
+                <span style={{fontSize:20,fontWeight:900,color:'#fff',letterSpacing:0.3}}>
+                  📐 {totalProjectSft.toLocaleString('en-IN')} SFT
+                </span>
+              </div>
+            )}
             <span className="gt-label">Grand Total</span>
             <span className="gt-amount">₹{grandTotal.toLocaleString('en-IN')}</span>
           </div>
@@ -1027,6 +1046,12 @@ export default function QuotationForm({ user }) {
                         <span className="room-card-label">{room.label}</span>
                       )}
                       <span className="room-card-total" style={{ color: room.color }}>{roomTotal === 0 ? '—' : '₹' + roomTotal.toLocaleString('en-IN')}</span>
+                      {!isAcc && roomSftMap[key] > 0 && (
+                        <span style={{fontSize:11,fontWeight:700,color:'#fff',background:'#1a1a1a',
+                          borderRadius:6,padding:'2px 8px',marginLeft:6,letterSpacing:0.3}}>
+                          📐 {roomSftMap[key]} SFT
+                        </span>
+                      )}
                     </div>
                     <div className="room-card-actions">
                       {!isAcc && (

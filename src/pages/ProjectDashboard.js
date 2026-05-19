@@ -1097,6 +1097,7 @@ export default function ProjectDashboard() {
               {label:'Total Received',  value:fmtK(summary.total_paid),     accent:'#16a34a'},
               {label:'Total Balance',   value:fmtK(summary.total_balance),  accent:'#E8471C'},
               {label:'Total Expenses',  value:fmtK(summary.total_expenses), accent:'#c23a16'},
+              {label:'Total Area',      value:(Number(summary.total_sft)||0).toLocaleString('en-IN')+' SFT', accent:'#7C3AED'},
               {label:'Profit Estimate', value:fmtK(summary.profit_estimate),
                 accent:summary.profit_estimate>=0?'#16a34a':'#dc2626'},
             ].map(k=>(
@@ -1227,6 +1228,15 @@ export default function ProjectDashboard() {
                     {profitPos?'+':''}₹{fmt(p.profit_estimate)}
                   </div>
 
+                  {/* SFT */}
+                  <div style={{textAlign:'center'}}>
+                    {Number(p.total_sft) > 0
+                      ? <><div style={{fontFamily:'monospace',fontWeight:800,fontSize:13,color:'#7C3AED'}}>{Number(p.total_sft).toLocaleString('en-IN')}</div>
+                          <div style={{fontSize:9,color:'#aaa',fontWeight:600}}>SFT</div></>
+                      : <div style={{color:'#ddd',fontSize:11}}>—</div>
+                    }
+                  </div>
+
                   {/* Dates */}
                   <div>
                     {p.project_start_date ? (
@@ -1278,10 +1288,14 @@ export default function ProjectDashboard() {
                 <div style={{fontFamily:'monospace',fontWeight:800,color:'#E8471C',fontSize:13}}>
                   ₹{fmt(sumCol('other_expenses'))}
                 </div>
+                <div style={{fontFamily:'monospace',fontWeight:800,fontSize:13,color:'#7C3AED'}}>
+                  {sumCol('total_sft')>0?sumCol('total_sft').toLocaleString('en-IN')+' SFT':'—'}
+                </div>
                 <div style={{fontFamily:'monospace',fontWeight:800,fontSize:13,
                   color:sumCol('profit_estimate')>=0?'#16a34a':'#dc2626'}}>
                   {sumCol('profit_estimate')>=0?'+':''}₹{fmt(sumCol('profit_estimate'))}
                 </div>
+                <div/>
                 <div/>
                 <div/>
                 <div/>
@@ -1294,5 +1308,5 @@ export default function ProjectDashboard() {
   );
 }
 
-const TG   = '2fr 0.9fr 1fr 1.2fr 0.9fr 0.9fr 0.9fr 1fr 0.8fr 0.8fr 0.5fr';
-const COLS = ['Project / Client','Manager','Total Cost','Paid','Balance','Material','Other Exp.','Profit Est.','Dates','Done',''];
+const TG   = '2fr 0.9fr 1fr 1.2fr 0.9fr 0.9fr 0.9fr 0.8fr 0.8fr 0.8fr 0.8fr 0.5fr';
+const COLS = ['Project / Client','Manager','Total Cost','Paid','Balance','Material','Other Exp.','Profit Est.','SFT','Dates','Done',''];
