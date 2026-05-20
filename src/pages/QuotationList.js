@@ -778,7 +778,7 @@ function VisitReportModal({ quotation, user, onClose }) {
                   onMouseLeave={e=>e.currentTarget.style.borderColor=fileError?'#EF4444':'#e0e0e0'}>
                   <div style={{fontSize:28,marginBottom:6}}>📎</div>
                   <div style={{fontSize:13,color:'#666',fontWeight:500}}>Click to add files (photos, PDFs, docs)</div>
-                  <div style={{fontSize:12,color:'#aaa',marginTop:4}}>Max 10MB per file · Add at least 3</div>
+                  <div style={{fontSize:11,color:'#aaa',marginTop:3}}>Max 10MB per file · Add at least 3</div>
                 </div>
                 {fileError && <div style={{marginTop:6,fontSize:12,color:'#EF4444',fontWeight:600}}>⚠ {fileError}</div>}
                 <input ref={fileRef} type="file" multiple style={{display:'none'}}
@@ -2962,15 +2962,6 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
   const afterDiscount    = subtotal - discountAmount;
   const gstAmount        = Math.round(afterDiscount * gstPercent / 100);
   const grandTotal       = afterDiscount + gstAmount;
-  // SFT calculation for EditModal
-  const totalProjectSft  = parseFloat(Object.entries(rooms).reduce((s,[key,room]) => {
-    if (key === 'accessories' || !room.items) return s;
-    return s + room.items.reduce((ss,it) => {
-      if (it.type === 'FIXED') return ss;
-      const w=parseFloat(it.width)||0, h=parseFloat(it.height)||0, n=parseFloat(it.nos)||0;
-      return ss + (w&&h&&n ? (w*h*n)/144 : 0);
-    }, 0);
-  }, 0).toFixed(2));
 
   // ── Save ─────────────────────────────────────────────────────
   const handleSave = async () => {
@@ -2984,36 +2975,26 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
         roomsToSave[k] = rest;
       }
       const payload = {
-        customer_name:              clientName,
-        customer_phone:             clientPhone,
-        customer_alt_phone:         clientAltPhone,
-        full_address:               fullAddress,
-        pincode,
-        villa_number:               villaNumber,
-        site_name:                  siteName,
-        location,
-        mobile:                     clientPhone,
-        project_type:               projectType,
-        site_manager_name:          smName,
-        site_manager_phone:         smPhone,
-        site_manager_designation:   smDesignation,
-        site_manager_branch:        smBranch,
-        project_start_date:         projectStartDate || null,
-        project_end_date:           projectEndDate   || null,
-        rooms:                      roomsToSave,
-        accessories:                roomsToSave.accessories,
-        ceiling_data:               sections,
-        discount_percent:           discountPercent,
-        discount_amount:            discountAmount,
-        gst_percent:                gstPercent,
-        gst_amount:                 gstAmount,
-        total_interior:             totalInterior,
-        total_ceiling:              totalAllSections,
-        grand_total:                grandTotal,
-        tc_items:                   Array.isArray(tcItems) ? tcItems : (typeof tcItems==='string' ? JSON.parse(tcItems) : []),
-        pay_stages:                 payStages,
-        project_status:             data.project_status || 'Unbooked',
-        total_sft:                  totalProjectSft || 0,
+        customer_name: clientName, customer_phone: clientPhone,
+        customer_alt_phone: clientAltPhone, full_address: fullAddress,
+        pincode, villa_number: villaNumber, site_name: siteName,
+        location, mobile: clientPhone, project_type: projectType,
+        site_manager_name: smName, site_manager_phone: smPhone,
+        site_manager_designation: smDesignation, site_manager_branch: smBranch,
+        project_start_date: projectStartDate || null,
+        project_end_date:   projectEndDate   || null,
+        rooms: roomsToSave, accessories: roomsToSave.accessories,
+        ceiling_data: sections,
+        tc_items: Array.isArray(tcItems) ? tcItems : (typeof tcItems === 'string' ? JSON.parse(tcItems) : []),
+        discount_percent: discountPercent, discount_amount: discountAmount,
+        gst_percent: gstPercent, gst_amount: gstAmount,
+        total_interior: totalInterior, total_ceiling: totalAllSections, grand_total: grandTotal,
+        total_sft: parseFloat(Object.entries(rooms).reduce((s, [k, r]) => {
+          if (k === 'accessories') return s;
+          return s + r.items.reduce((ss, i) => ss + calcArea(i), 0);
+        }, 0).toFixed(2)),
+        pay_stages: payStages,
+        project_status: data.project_status || 'Unbooked',
       };
       await api.put(`/quotations/${data.id}`, payload);
       await api.put(`/quotations/${data.id}/payment-stages`, { pay_stages: payStages });
@@ -3026,12 +3007,12 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
         const errs = err.response.data.errors || [];
         errs.forEach(e => toast.error(e, { duration: 4000 }));
       } else if (err.response?.status === 401) {
-        toast.error('Session expired. Please log in again.');
+        toast.error('Unauthorized: check your API key');
       } else {
-        const msg = err.response?.data?.message || err.message || 'Failed to save';
-        toast.error('Save failed: ' + msg, { duration: 6000 });
+        const msg = err.response?.data?.message || 'Failed to save';
+        toast.error(msg, { duration: 6000 });
       }
-      console.error('EditModal save error:', err.response?.data || err.message);
+      console.error('handleSave error:', err.response?.data || err.message);
     }
     setSaving(false);
   };
@@ -3942,133 +3923,60 @@ export default function QuotationList({ user = { role: 'admin' } }) {
               📋 Open Project Management
             </button>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:18}}>
-            {bookedQ.map((q) => {
-              const paid     = Number(q.paid_total||0);
-              const total    = Number(q.grand_total||0);
-              const balance  = total - paid;
-              const paidPct  = total > 0 ? Math.round((paid/total)*100) : 0;
-              const compPct  = typeof _cc[q.id] === 'number' ? _cc[q.id] : null;
-              const pColor   = paidPct===100?'#10B981':paidPct>=50?'#F59E0B':'#E8471C';
-              const cColor   = compPct===null?'#ccc':compPct>=100?'#15803d':compPct>=75?'#10B981':compPct>=50?'#F59E0B':compPct>=25?'#E8471C':'#EF4444';
-
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:0}}>
+            {bookedQ.map((q, idx) => {
+              const paid    = Number(q.paid_total||0);
+              const total   = Number(q.grand_total||0);
+              const balance = total - paid;
+              const paidPct = total > 0 ? Math.round((paid/total)*100) : 0;
               return (
                 <div key={q.id}
                   onClick={() => { setPmProjectId(q.id); setShowProjectMgmt(true); }}
-                  style={{
-                    background:'#fff',
-                    border:'1.5px solid #f0f0f0',
-                    borderRadius:16,
-                    padding:'24px',
-                    cursor:'pointer',
-                    transition:'all 0.18s',
-                    boxShadow:'0 2px 12px rgba(0,0,0,0.06)',
-                    display:'flex',
-                    flexDirection:'column',
-                    gap:14,
-                  }}
-                  onMouseEnter={e=>{e.currentTarget.style.boxShadow='0 6px 24px rgba(232,71,28,0.15)';e.currentTarget.style.borderColor='rgba(232,71,28,0.3)';e.currentTarget.style.transform='translateY(-2px)';}}
-                  onMouseLeave={e=>{e.currentTarget.style.boxShadow='0 2px 12px rgba(0,0,0,0.06)';e.currentTarget.style.borderColor='#f0f0f0';e.currentTarget.style.transform='translateY(0)';}}>
-
-                  {/* ── Top: Site name + BOOKED badge ── */}
-                  <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      {/* Client name — big orange highlight */}
-                      <div style={{
-                        fontWeight:900, fontSize:18,
-                        color:'#E8471C',
-                        fontFamily:"'DM Sans',sans-serif",
-                        letterSpacing:0.2,
-                        lineHeight:1.2,
-                        overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',
-                      }}>
-                        {q.customer_name}
-                      </div>
-                      {/* Site name below */}
-                      {q.site_name && (
-                        <div style={{fontSize:14,fontWeight:600,color:'#1a1a1a',marginTop:4}}>
-                          🏠 {q.site_name}
-                        </div>
-                      )}
-                      <div style={{fontSize:12,color:'#aaa',marginTop:4}}>
-                        #{q.quotation_id||q.id}
-                        {q.location ? ` · ${q.location}` : ''}
-                      </div>
-                      {q.site_manager_name && (
-                        <div style={{fontSize:12,color:'#555',fontWeight:600,marginTop:3}}>
-                          👷 {q.site_manager_name}
-                        </div>
-                      )}
-                    </div>
-                    <span style={{
-                      background:'#E8471C',color:'#fff',
-                      padding:'4px 10px',borderRadius:8,
-                      fontSize:10,fontWeight:800,
-                      flexShrink:0,letterSpacing:0.5,
-                    }}>BOOKED</span>
-                  </div>
-
-                  {/* ── Payment Progress ── */}
-                  <div>
-                    <div style={{display:'flex',justifyContent:'space-between',
-                      fontSize:12,fontWeight:700,marginBottom:6}}>
-                      <span style={{color:'#555'}}>💳 Payment Progress</span>
-                      <span style={{color:pColor}}>{paidPct}%</span>
-                    </div>
-                    <div style={{height:10,background:'#f0f0f0',borderRadius:99,overflow:'hidden'}}>
-                      <div style={{
-                        height:'100%',width:paidPct+'%',
-                        background:`linear-gradient(90deg,${pColor},${pColor}cc)`,
-                        borderRadius:99,transition:'width 0.6s',
-                      }}/>
-                    </div>
-                  </div>
-
-                  {/* ── Project Completion Progress ── */}
-                  <div>
-                    <div style={{display:'flex',justifyContent:'space-between',
-                      fontSize:12,fontWeight:700,marginBottom:6}}>
-                      <span style={{color:'#555'}}>🏗️ Project Progress</span>
-                      <span style={{color:cColor}}>
-                        {compPct === null ? '—' : compPct + '%'}
-                      </span>
-                    </div>
-                    <div style={{height:10,background:'#f0f0f0',borderRadius:99,overflow:'hidden'}}>
-                      <div style={{
-                        height:'100%',
-                        width:(compPct===null?0:compPct)+'%',
-                        background:compPct===null?'#e0e0e0':`linear-gradient(90deg,${cColor},${cColor}cc)`,
-                        borderRadius:99,transition:'width 0.6s',
-                      }}/>
-                    </div>
-                  </div>
-
-                  {/* ── Financials ── */}
-                  <div style={{
-                    display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:6,
-                    background:'#fafafa',borderRadius:10,padding:'10px 12px',
-                    border:'1px solid #f0f0f0',
-                  }}>
+                  style={{padding:'14px 18px',borderBottom:'1px solid #f0f0f0',
+                    borderRight: idx%2===0 ? '1px solid #f0f0f0' : 'none',
+                    cursor:'pointer',transition:'background 0.15s',background:'#fff'}}
+                  onMouseEnter={e => e.currentTarget.style.background='#fff8f5'}
+                  onMouseLeave={e => e.currentTarget.style.background='#fff'}>
+                  <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:8}}>
                     <div>
-                      <div style={{fontSize:9,color:'#aaa',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:2}}>Total</div>
-                      <div style={{fontFamily:'monospace',fontWeight:800,fontSize:14,color:'#1a1a1a'}}>
-                        ₹{Number(total).toLocaleString('en-IN')}
+                      <div style={{fontWeight:700,fontSize:13.5,color:'#1a1a1a',
+                        fontFamily:"'DM Sans',sans-serif"}}>
+                        {q.site_name || q.customer_name}
+                      </div>
+                      <div style={{fontSize:11,color:'#aaa',marginTop:2}}>
+                        #{q.quotation_id||q.id} · {q.customer_name} · {q.location||'—'}
                       </div>
                     </div>
-                    <div>
-                      <div style={{fontSize:9,color:'#aaa',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:2}}>Paid</div>
-                      <div style={{fontFamily:'monospace',fontWeight:800,fontSize:14,color:'#10B981'}}>
-                        ₹{Number(paid).toLocaleString('en-IN')}
-                      </div>
+                    <span style={{background:'rgba(232,71,28,0.1)',color:'#E8471C',
+                      padding:'2px 8px',borderRadius:6,fontSize:10,fontWeight:700,
+                      flexShrink:0,marginLeft:8}}>
+                      BOOKED
+                    </span>
+                  </div>
+                  {/* Payment progress */}
+                  <div style={{marginBottom:8}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:10,
+                      color:'#888',marginBottom:3}}>
+                      <span>Payment Progress</span>
+                      <span style={{fontWeight:700,color:paidPct===100?'#10B981':'#E8471C'}}>{paidPct}%</span>
                     </div>
-                    <div>
-                      <div style={{fontSize:9,color:'#aaa',fontWeight:700,textTransform:'uppercase',letterSpacing:0.5,marginBottom:2}}>Due</div>
-                      <div style={{fontFamily:'monospace',fontWeight:800,fontSize:14,color:balance>0?'#E8471C':'#10B981'}}>
-                        ₹{Number(balance).toLocaleString('en-IN')}
-                      </div>
+                    <div style={{height:5,background:'#f0f0f0',borderRadius:99,overflow:'hidden'}}>
+                      <div style={{height:'100%',width:paidPct+'%',
+                        background:paidPct===100?'#10B981':'#E8471C',
+                        borderRadius:99,transition:'width 0.5s'}}/>
                     </div>
                   </div>
-
+                  <div style={{display:'flex',gap:12,fontSize:11}}>
+                    <span style={{color:'#1a1a1a',fontWeight:700}}>
+                      ₹{Number(total).toLocaleString('en-IN')}
+                    </span>
+                    <span style={{color:'#10B981',fontWeight:600}}>
+                      Paid: ₹{Number(paid).toLocaleString('en-IN')}
+                    </span>
+                    <span style={{color:balance>0?'#E8471C':'#10B981',fontWeight:600}}>
+                      Due: ₹{Number(balance).toLocaleString('en-IN')}
+                    </span>
+                  </div>
                 </div>
               );
             })}
