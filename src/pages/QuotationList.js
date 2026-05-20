@@ -3923,7 +3923,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
               📋 Open Project Management
             </button>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:0}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:0}}>
             {bookedQ.map((q, idx) => {
               const paid    = Number(q.paid_total||0);
               const total   = Number(q.grand_total||0);
@@ -3932,20 +3932,28 @@ export default function QuotationList({ user = { role: 'admin' } }) {
               return (
                 <div key={q.id}
                   onClick={() => { setPmProjectId(q.id); setShowProjectMgmt(true); }}
-                  style={{padding:'14px 18px',borderBottom:'1px solid #f0f0f0',
-                    borderRight: idx%2===0 ? '1px solid #f0f0f0' : 'none',
+                  style={{padding:'20px 22px',borderBottom:'1px solid #f0f0f0',
+                    borderRight: (idx+1)%4!==0 ? '1px solid #f0f0f0' : 'none',
                     cursor:'pointer',transition:'background 0.15s',background:'#fff'}}
                   onMouseEnter={e => e.currentTarget.style.background='#fff8f5'}
                   onMouseLeave={e => e.currentTarget.style.background='#fff'}>
-                  <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:8}}>
-                    <div>
-                      <div style={{fontWeight:700,fontSize:13.5,color:'#1a1a1a',
-                        fontFamily:"'DM Sans',sans-serif"}}>
-                        {q.site_name || q.customer_name}
+                  {/* Header: client name (title) + BOOKED badge */}
+                  <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:6}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      {/* Client name — orange, larger */}
+                      <div style={{fontWeight:800,fontSize:16,color:'#E8471C',
+                        fontFamily:"'DM Sans',sans-serif",
+                        whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                        {q.customer_name}
                       </div>
-                      <div style={{fontSize:11,color:'#aaa',marginTop:2}}>
-                        #{q.quotation_id||q.id} · {q.customer_name} · {q.location||'—'}
+                      {/* Site name is now the subtitle */}
+                      <div style={{fontSize:11,color:'#666',marginTop:1,fontWeight:600}}>
+                        #{q.quotation_id||q.id} · {q.site_name || q.location || '—'}
                       </div>
+                      {/* Location */}
+                      {q.location && q.site_name && (
+                        <div style={{fontSize:10,color:'#aaa',marginTop:1}}>{q.location}</div>
+                      )}
                     </div>
                     <span style={{background:'rgba(232,71,28,0.1)',color:'#E8471C',
                       padding:'2px 8px',borderRadius:6,fontSize:10,fontWeight:700,
@@ -3953,8 +3961,16 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                       BOOKED
                     </span>
                   </div>
+                  {/* Site Manager */}
+                  {q.site_manager_name && (
+                    <div style={{fontSize:10,color:'#7C3AED',fontWeight:600,marginBottom:6,
+                      display:'flex',alignItems:'center',gap:4}}>
+                      <span>👷</span>
+                      <span>{q.site_manager_name}{q.site_manager_branch ? ` · ${q.site_manager_branch}` : ''}</span>
+                    </div>
+                  )}
                   {/* Payment progress */}
-                  <div style={{marginBottom:8}}>
+                  <div style={{marginBottom:6}}>
                     <div style={{display:'flex',justifyContent:'space-between',fontSize:10,
                       color:'#888',marginBottom:3}}>
                       <span>Payment Progress</span>
@@ -3965,6 +3981,14 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                         background:paidPct===100?'#10B981':'#E8471C',
                         borderRadius:99,transition:'width 0.5s'}}/>
                     </div>
+                  </div>
+                  {/* Project completion status */}
+                  <div style={{marginBottom:8}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:10,
+                      color:'#888',marginBottom:3}}>
+                      <span>Project Completion</span>
+                    </div>
+                    <CompletionBar quotationId={q.id} />
                   </div>
                   <div style={{display:'flex',gap:12,fontSize:11}}>
                     <span style={{color:'#1a1a1a',fontWeight:700}}>
