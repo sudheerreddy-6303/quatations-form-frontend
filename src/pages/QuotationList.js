@@ -3026,11 +3026,12 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
         const errs = err.response.data.errors || [];
         errs.forEach(e => toast.error(e, { duration: 4000 }));
       } else if (err.response?.status === 401) {
-        toast.error('Unauthorized: check your API key');
+        toast.error('Session expired. Please log in again.');
       } else {
-        toast.error('Failed to save');
+        const msg = err.response?.data?.message || err.message || 'Failed to save';
+        toast.error('Save failed: ' + msg, { duration: 6000 });
       }
-      console.error(err);
+      console.error('EditModal save error:', err.response?.data || err.message);
     }
     setSaving(false);
   };
