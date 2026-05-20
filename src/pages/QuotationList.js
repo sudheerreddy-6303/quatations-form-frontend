@@ -3565,7 +3565,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
       setPaymentQ(res.data.data);
     } catch { toast.error('Failed to load'); }
   };
-  const handleDelete   = async (id) => { if (!canDelete) { toast.error('Only admins can delete quotations'); return; } if (!window.confirm('Delete this quotation?')) return; await api.delete(`/quotations/${id}`); toast.success('Deleted'); fetchAll(); };
+  const handleDelete   = async (id) => { if (!canDelete) { toast.error('Only admins can delete quotations'); return; } if (!window.confirm('Delete this quotation?')) return; try { await api.delete(`/quotations/${id}`); toast.success('Deleted'); fetchAll(); } catch (err) { toast.error(err?.response?.data?.message || 'Failed to delete quotation'); } };
   const handleStatusChange = async (id, status) => {
     // Admin can change ANY status freely
     // Non-admins cannot change Booked projects back
