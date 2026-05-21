@@ -835,12 +835,20 @@ function CompletionStatusModal({ quotation, user, onClose }) {
   ];
 
   const [pct,        setPct]        = React.useState(0);
+  const [stagePcts,  setStagePcts]  = React.useState({});
   const [notes,      setNotes]      = React.useState('');
   const [stageDates, setStageDates] = React.useState({});
   const [loading,    setLoading]    = React.useState(true);
   const [saving,     setSaving]     = React.useState(false);
   const [dragging,   setDragging]   = React.useState(false);
   const trackRef = React.useRef();
+
+  // Recompute overall pct as average of all stage pcts whenever stagePcts changes
+  React.useEffect(() => {
+    const vals = STAGES.map(s => Number(stagePcts[s.key] ?? 0));
+    const avg  = Math.round(vals.reduce((a,b)=>a+b,0) / vals.length);
+    setPct(avg);
+  }, [stagePcts]);
 
   const DRAFT_KEY = 'completion_draft_' + quotation.id;
 
@@ -857,18 +865,18 @@ function CompletionStatusModal({ quotation, user, onClose }) {
             const dbTime    = new Date(d.updated_at).getTime();
             if (draftTime > dbTime && Object.keys(draft.stageDates||{}).length > 0) {
               // Draft is newer — use it
-              setPct(draft.pct ?? d.percentage ?? 0);
               setNotes(draft.notes ?? d.notes ?? '');
               setStageDates(draft.stageDates ?? d.stage_dates ?? {});
+              setStagePcts(draft.stagePcts ?? d.stage_pcts ?? {});
               setLoading(false);
               return;
             }
           }
         } catch {}
         // Use DB data
-        setPct(d.percentage || 0);
         setNotes(d.notes || '');
         setStageDates(d.stage_dates || {});
+        setStagePcts(d.stage_pcts || {});
       })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -878,9 +886,9 @@ function CompletionStatusModal({ quotation, user, onClose }) {
   // Auto-save draft to localStorage whenever data changes
   React.useEffect(() => {
     if (loading) return;
-    const draft = { pct, notes, stageDates, savedAt: new Date().toISOString() };
+    const draft = { pct, notes, stageDates, stagePcts, savedAt: new Date().toISOString() };
     try { localStorage.setItem(DRAFT_KEY, JSON.stringify(draft)); } catch {}
-  }, [pct, notes, stageDates, loading]);
+  }, [pct, notes, stageDates, stagePcts, loading]);
 
   const setStage = (key, field, val) =>
     setStageDates(prev => ({ ...prev, [key]: { ...(prev[key]||{}), [field]: val } }));
@@ -893,6 +901,7 @@ function CompletionStatusModal({ quotation, user, onClose }) {
         percentage:   pct,
         notes,
         stage_dates:  stageDates,
+        stage_pcts:   stagePcts,
         updated_by:   user?.display || user?.username || '',
       });
       // Clear local draft after successful save
@@ -970,7 +979,8 @@ function CompletionStatusModal({ quotation, user, onClose }) {
               {/* Stage rows */}
               {STAGES.map((s, i) => {
                 const sd = stageDates[s.key] || {};
-                // Calculate days worked between start and end
+                const sp = Number(stagePcts[s.key] ?? 0);
+                const spColor = sp>=100?'#15803d':sp>=75?'#10B981':sp>=50?'#F59E0B':sp>=25?'#E8471C':'#EF4444';
                 const calcDays = (start, end) => {
                   if (!start || !end) return null;
                   const d1 = new Date(start + 'T00:00:00');
@@ -981,35 +991,72 @@ function CompletionStatusModal({ quotation, user, onClose }) {
                 const days = calcDays(sd.start, sd.end);
                 return (
                   <div key={s.key} style={{display:'grid',gridTemplateColumns:'1.8fr 1fr 1fr 72px',
-                    padding:'10px 14px',gap:8,alignItems:'center',
+                    padding:'12px 14px',gap:8,alignItems:'start',
                     background: i%2===0 ? '#fff' : '#fafafa',
                     borderBottom: i < STAGES.length-1 ? '1px solid #f5f5f5' : 'none'}}>
-                    {/* Stage label */}
-                    <div style={{display:'flex',alignItems:'center',gap:8}}>
-                      <span style={{fontSize:16,flexShrink:0}}>{s.icon}</span>
-                      <div>
-                        <div style={{fontSize:13,fontWeight:600,color:'#1a1a1a'}}>{s.label}</div>
-                        {days !== null && (
-                          <div style={{fontSize:10,color:'#15803d',fontWeight:600,marginTop:1}}>✓ {days} day{days!==1?'s':''}</div>
-                        )}
+                    {/* Stage label + completion bar below */}
+                    <div>
+                      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10}}>
+                        <span style={{fontSize:16,flexShrink:0}}>{s.icon}</span>
+                        <div>
+                          <div style={{fontSize:13,fontWeight:600,color:'#1a1a1a'}}>{s.label}</div>
+                          {days !== null && (
+                            <div style={{fontSize:10,color:'#15803d',fontWeight:600,marginTop:1}}>✓ {days} day{days!==1?'s':''}</div>
+                          )}
+                        </div>
+                      </div>
+                      {/* Completion drag bar under stage name */}
+                      <div style={{paddingRight:12}}>
+                        <div style={{display:'flex',justifyContent:'space-between',marginBottom:5}}>
+                          <span style={{fontSize:10,color:'#aaa',fontWeight:600}}>Completion</span>
+                          <span style={{fontSize:11,fontWeight:800,color:spColor}}>{sp}%</span>
+                        </div>
+                        <div
+                          style={{height:10,background:'#f0f0f0',borderRadius:99,cursor:'pointer',
+                            position:'relative',overflow:'visible'}}
+                          onClick={e => {
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const v = Math.round(Math.max(0,Math.min((e.clientX-rect.left)/rect.width,1))*100);
+                            setStagePcts(prev=>({...prev,[s.key]:v}));
+                          }}
+                          onMouseDown={e => {
+                            e.preventDefault();
+                            const el = e.currentTarget;
+                            const move = ev => {
+                              const rect = el.getBoundingClientRect();
+                              const v = Math.round(Math.max(0,Math.min((ev.clientX-rect.left)/rect.width,1))*100);
+                              setStagePcts(prev=>({...prev,[s.key]:v}));
+                            };
+                            const up = () => { document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up); };
+                            document.addEventListener('mousemove',move);
+                            document.addEventListener('mouseup',up);
+                          }}>
+                          <div style={{height:'100%',width:sp+'%',background:spColor,
+                            borderRadius:99,transition:'width 0.2s',pointerEvents:'none'}}/>
+                          <div style={{position:'absolute',left:sp+'%',top:'50%',
+                            transform:'translate(-50%,-50%)',width:18,height:18,
+                            background:'#fff',borderRadius:'50%',border:`3px solid ${spColor}`,
+                            boxShadow:'0 2px 6px rgba(0,0,0,0.2)',pointerEvents:'none',
+                            transition:'left 0.1s'}}/>
+                        </div>
                       </div>
                     </div>
                     {/* Start date */}
-                    <div>
+                    <div style={{paddingTop:4}}>
                       <input type="date" value={sd.start||''} style={IS}
                         onChange={e=>setStage(s.key,'start',e.target.value)}
                         onFocus={e=>e.target.style.borderColor='#E8471C'}
                         onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
                     </div>
                     {/* End date */}
-                    <div>
+                    <div style={{paddingTop:4}}>
                       <input type="date" value={sd.end||''} style={IS}
                         onChange={e=>setStage(s.key,'end',e.target.value)}
                         onFocus={e=>e.target.style.borderColor='#E8471C'}
                         onBlur={e=>e.target.style.borderColor='#e8e8e8'} />
                     </div>
                     {/* Days worked */}
-                    <div style={{textAlign:'center'}}>
+                    <div style={{textAlign:'center',paddingTop:4}}>
                       {days !== null ? (
                         <div style={{
                           background: days===0?'#FEF9E6':days<=7?'#F0FDF4':days<=14?'#EFF6FF':'#FFF0F0',
@@ -1057,6 +1104,9 @@ function CompletionStatusModal({ quotation, user, onClose }) {
                       <div style={{fontFamily:'monospace',fontWeight:900,fontSize:18,color:'#10B981'}}>{totalDays}</div>
                       <div style={{fontSize:9,color:'#aaa',fontWeight:600}}>days total</div>
                     </div>
+                    <div style={{color:'#aaa',fontSize:11,fontStyle:'italic'}}>
+                      Avg: {Math.round(STAGES.reduce((s,st)=>s+Number(stagePcts[st.key]??0),0)/STAGES.length)}% overall
+                    </div>
                   </div>
                 );
               })()}
@@ -1066,8 +1116,15 @@ function CompletionStatusModal({ quotation, user, onClose }) {
           {/* Overall completion drag bar */}
           <div style={{background:'#fff8f5',border:'1.5px solid rgba(232,71,28,0.2)',
             borderRadius:14,padding:'18px 20px',marginBottom:20}}>
-            <div style={{fontSize:11,fontWeight:800,color:'#888',textTransform:'uppercase',
-              letterSpacing:0.8,marginBottom:14}}>Overall Project Completion</div>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:800,color:'#888',textTransform:'uppercase',letterSpacing:0.8}}>
+                Overall Project Completion
+              </div>
+              <span style={{fontSize:10,background:'#FEF9E6',color:'#B45309',border:'1px solid #FCD34D',
+                borderRadius:6,padding:'2px 8px',fontWeight:700}}>
+                ⚡ Auto-calculated from stages
+              </span>
+            </div>
 
             {/* Big pct */}
             <div style={{textAlign:'center',marginBottom:16}}>
@@ -3923,7 +3980,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
               📋 Open Project Management
             </button>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:0}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,padding:'16px'}}>
             {bookedQ.map((q, idx) => {
               const paid    = Number(q.paid_total||0);
               const total   = Number(q.grand_total||0);
@@ -3932,74 +3989,90 @@ export default function QuotationList({ user = { role: 'admin' } }) {
               return (
                 <div key={q.id}
                   onClick={() => { setPmProjectId(q.id); setShowProjectMgmt(true); }}
-                  style={{padding:'20px 22px',borderBottom:'1px solid #f0f0f0',
-                    borderRight: (idx+1)%4!==0 ? '1px solid #f0f0f0' : 'none',
-                    cursor:'pointer',transition:'background 0.15s',background:'#fff'}}
-                  onMouseEnter={e => e.currentTarget.style.background='#fff8f5'}
-                  onMouseLeave={e => e.currentTarget.style.background='#fff'}>
-                  {/* Header: client name (title) + BOOKED badge */}
-                  <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:6}}>
-                    <div style={{flex:1,minWidth:0}}>
-                      {/* Client name — orange, larger */}
-                      <div style={{fontWeight:800,fontSize:16,color:'#E8471C',
-                        fontFamily:"'DM Sans',sans-serif",
-                        whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                        {q.customer_name}
-                      </div>
-                      {/* Site name is now the subtitle */}
-                      <div style={{fontSize:11,color:'#666',marginTop:1,fontWeight:600}}>
-                        #{q.quotation_id||q.id} · {q.site_name || q.location || '—'}
-                      </div>
-                      {/* Location */}
-                      {q.location && q.site_name && (
-                        <div style={{fontSize:10,color:'#aaa',marginTop:1}}>{q.location}</div>
-                      )}
+                  style={{
+                    padding:'22px 24px',
+                    borderRadius:14,
+                    border:'1.5px solid #f0ece8',
+                    cursor:'pointer',
+                    transition:'box-shadow 0.18s, transform 0.18s, background 0.15s',
+                    background:'#fff',
+                    boxShadow:'0 2px 10px rgba(0,0,0,0.06)',
+                    display:'flex', flexDirection:'column', gap:0,
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.background='#fff8f5'; e.currentTarget.style.boxShadow='0 6px 24px rgba(232,71,28,0.13)'; e.currentTarget.style.transform='translateY(-2px)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.background='#fff'; e.currentTarget.style.boxShadow='0 2px 10px rgba(0,0,0,0.06)'; e.currentTarget.style.transform='translateY(0)'; }}>
+
+                  {/* Header: client name + BOOKED badge */}
+                  <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:4}}>
+                    <div style={{fontWeight:800,fontSize:18,color:'#E8471C',
+                      fontFamily:"'DM Sans',sans-serif",lineHeight:1.2,
+                      flex:1,minWidth:0,paddingRight:8,
+                      wordBreak:'break-word'}}>
+                      {q.customer_name}
                     </div>
                     <span style={{background:'rgba(232,71,28,0.1)',color:'#E8471C',
-                      padding:'2px 8px',borderRadius:6,fontSize:10,fontWeight:700,
-                      flexShrink:0,marginLeft:8}}>
+                      padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:800,
+                      flexShrink:0,letterSpacing:0.5}}>
                       BOOKED
                     </span>
                   </div>
+
+                  {/* QID + Site name */}
+                  <div style={{fontSize:12,color:'#555',fontWeight:700,marginBottom:2}}>
+                    #{q.quotation_id||q.id} · {q.site_name || q.location || '—'}
+                  </div>
+
+                  {/* Location */}
+                  {q.location && (
+                    <div style={{fontSize:11,color:'#999',marginBottom:8}}>{q.location}</div>
+                  )}
+
                   {/* Site Manager */}
                   {q.site_manager_name && (
-                    <div style={{fontSize:10,color:'#7C3AED',fontWeight:600,marginBottom:6,
-                      display:'flex',alignItems:'center',gap:4}}>
-                      <span>👷</span>
+                    <div style={{fontSize:11,color:'#7C3AED',fontWeight:700,marginBottom:10,
+                      display:'flex',alignItems:'center',gap:5}}>
+                      <span style={{fontSize:13}}>👷</span>
                       <span>{q.site_manager_name}{q.site_manager_branch ? ` · ${q.site_manager_branch}` : ''}</span>
                     </div>
                   )}
+
                   {/* Payment progress */}
-                  <div style={{marginBottom:6}}>
-                    <div style={{display:'flex',justifyContent:'space-between',fontSize:10,
-                      color:'#888',marginBottom:3}}>
-                      <span>Payment Progress</span>
-                      <span style={{fontWeight:700,color:paidPct===100?'#10B981':'#E8471C'}}>{paidPct}%</span>
+                  <div style={{marginBottom:8}}>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:11,
+                      color:'#888',marginBottom:4}}>
+                      <span style={{fontWeight:600}}>Payment Progress</span>
+                      <span style={{fontWeight:800,color:paidPct===100?'#10B981':'#E8471C',fontSize:12}}>{paidPct}%</span>
                     </div>
-                    <div style={{height:5,background:'#f0f0f0',borderRadius:99,overflow:'hidden'}}>
+                    <div style={{height:7,background:'#f0f0f0',borderRadius:99,overflow:'hidden'}}>
                       <div style={{height:'100%',width:paidPct+'%',
                         background:paidPct===100?'#10B981':'#E8471C',
                         borderRadius:99,transition:'width 0.5s'}}/>
                     </div>
                   </div>
-                  {/* Project completion status */}
-                  <div style={{marginBottom:8}}>
-                    <div style={{display:'flex',justifyContent:'space-between',fontSize:10,
-                      color:'#888',marginBottom:3}}>
-                      <span>Project Completion</span>
-                    </div>
+
+                  {/* Project completion */}
+                  <div style={{marginBottom:12}}>
+                    <div style={{fontSize:11,color:'#888',fontWeight:600,marginBottom:4}}>Project Completion</div>
                     <CompletionBar quotationId={q.id} />
                   </div>
-                  <div style={{display:'flex',gap:12,fontSize:11}}>
-                    <span style={{color:'#1a1a1a',fontWeight:700}}>
-                      ₹{Number(total).toLocaleString('en-IN')}
-                    </span>
-                    <span style={{color:'#10B981',fontWeight:600}}>
-                      Paid: ₹{Number(paid).toLocaleString('en-IN')}
-                    </span>
-                    <span style={{color:balance>0?'#E8471C':'#10B981',fontWeight:600}}>
-                      Due: ₹{Number(balance).toLocaleString('en-IN')}
-                    </span>
+
+                  {/* Divider */}
+                  <div style={{height:1,background:'#f5f0ec',marginBottom:10}}/>
+
+                  {/* Amounts */}
+                  <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <span style={{fontSize:11,color:'#999'}}>Total</span>
+                      <span style={{fontWeight:800,fontSize:13,color:'#1a1a1a'}}>₹{Number(total).toLocaleString('en-IN')}</span>
+                    </div>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <span style={{fontSize:11,color:'#999'}}>Paid</span>
+                      <span style={{fontWeight:700,fontSize:12,color:'#10B981'}}>₹{Number(paid).toLocaleString('en-IN')}</span>
+                    </div>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <span style={{fontSize:11,color:'#999'}}>Due</span>
+                      <span style={{fontWeight:700,fontSize:12,color:balance>0?'#E8471C':'#10B981'}}>₹{Number(balance).toLocaleString('en-IN')}</span>
+                    </div>
                   </div>
                 </div>
               );

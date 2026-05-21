@@ -1132,176 +1132,196 @@ export default function ProjectDashboard() {
             <div style={{fontSize:13,color:'#aaa'}}>Mark a quotation as "Booked" to see it here.</div>
           </div>
         ) : (
-          <div style={{background:'#fff',borderRadius:16,border:'1px solid #ebebeb',
-            overflow:'hidden',boxShadow:'0 2px 16px rgba(0,0,0,0.06)'}}>
+          <>
+            {/* ── Project Cards Grid ── */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:22,marginBottom:28}}>
+              {filtered.map(p => {
+                const paidPct   = p.grand_total>0 ? Math.min(Math.round((p.total_paid/p.grand_total)*100),100) : 0;
+                const profitPos = p.profit_estimate >= 0;
+                return (
+                  <div key={p.id}
+                    onClick={() => setSelected(p.id)}
+                    style={{
+                      background:'#fff', borderRadius:16,
+                      border:'1.5px solid #f0ece8',
+                      padding:'28px 30px',
+                      cursor:'pointer',
+                      boxShadow:'0 2px 10px rgba(0,0,0,0.06)',
+                      transition:'box-shadow 0.18s, transform 0.18s, background 0.15s',
+                      display:'flex', flexDirection:'column', gap:0,
+                    }}
+                    onMouseEnter={e=>{ e.currentTarget.style.background='#fff8f5'; e.currentTarget.style.boxShadow='0 6px 24px rgba(232,71,28,0.13)'; e.currentTarget.style.transform='translateY(-2px)'; }}
+                    onMouseLeave={e=>{ e.currentTarget.style.background='#fff'; e.currentTarget.style.boxShadow='0 2px 10px rgba(0,0,0,0.06)'; e.currentTarget.style.transform='translateY(0)'; }}>
 
-            {/* Table head */}
-            <div style={{display:'grid',gridTemplateColumns:TG,padding:'12px 20px',gap:8,
-              background:'#fafafa',borderBottom:'2px solid #E8471C'}}>
-              {COLS.map(c=>(
-                <div key={c} style={{fontSize:10,fontWeight:800,color:'#888',
-                  textTransform:'uppercase',letterSpacing:0.7}}>{c}</div>
-              ))}
+                    {/* Client name + BOOKED badge */}
+                    <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:4}}>
+                      <div style={{fontWeight:800,fontSize:22,color:'#E8471C',
+                        fontFamily:"'DM Sans',sans-serif",lineHeight:1.2,
+                        flex:1,minWidth:0,paddingRight:8,wordBreak:'break-word'}}>
+                        {p.customer_name}
+                      </div>
+                      <span style={{background:'rgba(232,71,28,0.1)',color:'#E8471C',
+                        padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:800,
+                        flexShrink:0,letterSpacing:0.5}}>BOOKED</span>
+                    </div>
+
+                    {/* Site name */}
+                    <div style={{fontSize:14,color:'#555',fontWeight:700,marginBottom:3}}>
+                      {p.site_name || p.location || '—'}
+                    </div>
+
+                    {/* Location */}
+                    {p.location && p.site_name && (
+                      <div style={{fontSize:11,color:'#999',marginBottom:6}}>{p.location}</div>
+                    )}
+
+                    {/* Site manager */}
+                    {p.site_manager_name && (
+                      <div style={{fontSize:13,color:'#7C3AED',fontWeight:700,marginBottom:12,
+                        display:'flex',alignItems:'center',gap:6}}>
+                        <span style={{fontSize:13}}>👷</span>
+                        <span>{p.site_manager_name}{p.site_manager_branch?` · ${p.site_manager_branch}`:''}</span>
+                      </div>
+                    )}
+
+                    {/* Dates + SFT */}
+                    {(p.project_start_date || p.project_end_date || Number(p.total_sft)>0) && (
+                      <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
+                        {p.project_start_date && (
+                          <span style={{fontSize:10,fontWeight:700,color:'#15803d',
+                            background:'#f0fdf4',padding:'2px 8px',borderRadius:5}}>
+                            ▶ {new Date(p.project_start_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}
+                          </span>
+                        )}
+                        {p.project_end_date && (
+                          <span style={{fontSize:10,fontWeight:700,color:'#E8471C',
+                            background:'#fff8f5',padding:'2px 8px',borderRadius:5}}>
+                            ⏹ {new Date(p.project_end_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short'})}
+                          </span>
+                        )}
+                        {Number(p.total_sft)>0 && (
+                          <span style={{fontSize:10,fontWeight:700,color:'#7C3AED',
+                            background:'#f5f0ff',padding:'2px 8px',borderRadius:5}}>
+                            📐 {Number(p.total_sft).toLocaleString('en-IN')} SFT
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Payment progress */}
+                    <div style={{marginBottom:8}}>
+                      <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#888',marginBottom:4}}>
+                        <span style={{fontWeight:600}}>Payment Progress</span>
+                        <span style={{fontWeight:800,color:paidPct===100?'#10B981':'#E8471C',fontSize:12}}>{paidPct}%</span>
+                      </div>
+                      <div style={{height:9,background:'#f0f0f0',borderRadius:99,overflow:'hidden'}}>
+                        <div style={{height:'100%',width:paidPct+'%',
+                          background:paidPct===100?'#10B981':'#E8471C',
+                          borderRadius:99,transition:'width 0.5s'}}/>
+                      </div>
+                    </div>
+
+                    {/* Project completion */}
+                    <div style={{marginBottom:12}}>
+                      <div style={{fontSize:11,color:'#888',fontWeight:600,marginBottom:4}}>Project Completion</div>
+                      <CompletionCell projectId={p.id} />
+                    </div>
+
+                    {/* Divider */}
+                    <div style={{height:1,background:'#f5f0ec',marginBottom:10}}/>
+
+                    {/* Financial rows */}
+                    <div style={{display:'flex',flexDirection:'column',gap:5,marginBottom:10}}>
+                      {[
+                        {label:'Total',    value:fmt(p.grand_total),     color:'#1a1a1a'},
+                        {label:'Paid',     value:fmt(p.total_paid),      color:'#10B981'},
+                        {label:'Balance',  value:fmt(p.balance_due),     color:p.balance_due>0?'#E8471C':'#10B981'},
+                        {label:'Material', value:fmt(p.material_cost),   color:'#c23a16'},
+                        {label:'Other Exp',value:fmt(p.other_expenses),  color:'#c23a16'},
+                        {label:'Profit Est',value:(profitPos?'+':'')+fmt(p.profit_estimate), color:profitPos?'#16a34a':'#dc2626'},
+                      ].map(row=>(
+                        <div key={row.label} style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                          <span style={{fontSize:12,color:'#999'}}>{row.label}</span>
+                          <span style={{fontWeight:700,fontSize:13,fontFamily:'monospace',color:row.color}}>₹{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* View button */}
+                    <div style={{textAlign:'right',marginTop:'auto'}}>
+                      <span style={{fontSize:12,color:'#E8471C',fontWeight:700,
+                        padding:'5px 12px',background:'rgba(232,71,28,0.07)',
+                        borderRadius:6,whiteSpace:'nowrap'}}>View →</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
-            {/* Rows */}
-            {filtered.map((p,idx)=>{
-              const paidPct  = p.grand_total>0 ? Math.min(Math.round((p.total_paid/p.grand_total)*100),100) : 0;
-              const profitPos = p.profit_estimate >= 0;
+            {/* ── Totals summary ── */}
+            {filtered.length > 1 && (() => {
+              const profitTotal = sumCol('profit_estimate');
+              const sftTotal    = sumCol('total_sft');
+              const tiles = [
+                { label:'Total Value',     value:fmt(sumCol('grand_total')),    color:'#1a1a1a', bg:'#f8f8f8',     icon:'💰', prefix:'₹' },
+                { label:'Total Paid',      value:fmt(sumCol('total_paid')),     color:'#16a34a', bg:'#f0fdf4',     icon:'✅', prefix:'₹' },
+                { label:'Total Balance',   value:fmt(sumCol('balance_due')),    color:'#E8471C', bg:'#fff8f5',     icon:'⏳', prefix:'₹' },
+                { label:'Material Cost',   value:fmt(sumCol('material_cost')),  color:'#c23a16', bg:'#fff5f0',     icon:'🪵', prefix:'₹' },
+                { label:'Other Expenses',  value:fmt(sumCol('other_expenses')), color:'#c23a16', bg:'#fff5f0',     icon:'🧾', prefix:'₹' },
+                { label:'Profit Estimate', value:(profitTotal>=0?'+':'')+fmt(profitTotal),
+                  color:profitTotal>=0?'#16a34a':'#dc2626',
+                  bg:profitTotal>=0?'#f0fdf4':'#fef2f2',                                        icon:'📈', prefix:'₹' },
+                ...(sftTotal>0
+                  ? [{ label:'Total Area', value:sftTotal.toLocaleString('en-IN')+' SFT', color:'#7C3AED', bg:'#f5f0ff', icon:'📐', prefix:'' }]
+                  : []),
+              ];
               return (
-                <div key={p.id}
-                  style={{display:'grid',gridTemplateColumns:TG,padding:'14px 20px',gap:8,
-                    background:idx%2===0?'#fff':'#fafcff',
-                    borderBottom:'1px solid #f5f5f5',alignItems:'center',
-                    cursor:'pointer',transition:'background 0.15s'}}
-                  onMouseEnter={e=>e.currentTarget.style.background='#fff8f5'}
-                  onMouseLeave={e=>e.currentTarget.style.background=idx%2===0?'#fff':'#fafcff'}
-                  onClick={()=>setSelected(p.id)}>
-
-                  {/* Project / Client */}
-                  <div>
-                    <div style={{fontWeight:700,fontSize:13.5,color:'#1a1a1a',
-                      overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                      {p.site_name||p.customer_name}
-                    </div>
-                    <div style={{fontSize:11,color:'#aaa',marginTop:2,
-                      overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
-                      {p.customer_name}
-                      {p.location ? ` · ${p.location}` : ''}
-                      {' · '}
-                      <span style={{color: p.site_manager_name?'#555':'#ccc'}}>
-                        {p.site_manager_name||'—'}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Manager */}
-                  <div style={{fontSize:13,color:'#555',fontWeight:500}}>
-                    {p.site_manager_name||'—'}
-                  </div>
-
-                  {/* Total Cost */}
-                  <div style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:'#1a1a1a'}}>
-                    ₹{fmt(p.grand_total)}
-                  </div>
-
-                  {/* Paid + progress */}
-                  <div>
-                    <div style={{fontFamily:'monospace',fontSize:13,fontWeight:700,color:'#16a34a'}}>
-                      ₹{fmt(p.total_paid)}
-                    </div>
-                    <div style={{marginTop:4,height:4,background:'#dcfce7',borderRadius:99,overflow:'hidden'}}>
-                      <div style={{height:'100%',width:paidPct+'%',background:'#16a34a',borderRadius:99}}/>
-                    </div>
-                    <div style={{fontSize:9,color:'#aaa',marginTop:2}}>{paidPct}%</div>
-                  </div>
-
-                  {/* Balance */}
-                  <div style={{fontFamily:'monospace',fontSize:13,fontWeight:700,
-                    color:p.balance_due>0?'#E8471C':'#16a34a'}}>
-                    ₹{fmt(p.balance_due)}
-                  </div>
-
-                  {/* Material */}
-                  <div>
-                    <div style={{fontFamily:'monospace',fontSize:13,color:'#E8471C',fontWeight:600}}>
-                      ₹{fmt(p.material_cost)}
-                    </div>
-                    {p.order_count>0 && (
-                      <div style={{fontSize:10,color:'#aaa',marginTop:1}}>{p.order_count} order{p.order_count>1?'s':''}</div>
-                    )}
-                  </div>
-
-                  {/* Other Exp */}
-                  <div>
-                    <div style={{fontFamily:'monospace',fontSize:13,color:'#E8471C',fontWeight:600}}>
-                      ₹{fmt(p.other_expenses)}
-                    </div>
-                    {p.expense_count>0 && (
-                      <div style={{fontSize:10,color:'#aaa',marginTop:1}}>{p.expense_count} entr{p.expense_count>1?'ies':'y'}</div>
-                    )}
-                  </div>
-
-                  {/* Profit Est. */}
-                  <div style={{fontFamily:'monospace',fontSize:13,fontWeight:700,
-                    color:profitPos?'#16a34a':'#dc2626'}}>
-                    {profitPos?'+':''}₹{fmt(p.profit_estimate)}
-                  </div>
-
-                  {/* SFT */}
-                  <div style={{textAlign:'center'}}>
-                    {Number(p.total_sft) > 0
-                      ? <><div style={{fontFamily:'monospace',fontWeight:800,fontSize:13,color:'#7C3AED'}}>{Number(p.total_sft).toLocaleString('en-IN')}</div>
-                          <div style={{fontSize:9,color:'#aaa',fontWeight:600}}>SFT</div></>
-                      : <div style={{color:'#ddd',fontSize:11}}>—</div>
-                    }
-                  </div>
-
-                  {/* Dates */}
-                  <div>
-                    {p.project_start_date ? (
-                      <div style={{fontSize:11,fontWeight:600,color:'#15803d',marginBottom:3}}>
-                        ▶ {new Date(p.project_start_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
+                <div style={{borderRadius:16,overflow:'hidden',border:'1.5px solid #ebebeb',
+                  boxShadow:'0 2px 12px rgba(0,0,0,0.06)'}}>
+                  {/* Header strip */}
+                  <div style={{background:'linear-gradient(135deg,#1a1a1a,#2d1200)',
+                    padding:'14px 24px',display:'flex',alignItems:'center',gap:10}}>
+                    <span style={{fontSize:16}}>📊</span>
+                    <div>
+                      <div style={{fontWeight:800,fontSize:14,color:'#fff',
+                        fontFamily:"'DM Sans',sans-serif"}}>
+                        Portfolio Summary
                       </div>
-                    ) : <div style={{fontSize:11,color:'#ccc'}}>—</div>}
-                    {p.project_end_date ? (
-                      <div style={{fontSize:11,fontWeight:600,color:'#E8471C'}}>
-                        ⏹ {new Date(p.project_end_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
+                      <div style={{fontSize:11,color:'#aaa',marginTop:1}}>
+                        {filtered.length} booked project{filtered.length>1?'s':''} · combined totals
                       </div>
-                    ) : null}
+                    </div>
                   </div>
-
-                  {/* Completion % — loaded per project from state */}
-                  <CompletionCell projectId={p.id} />
-
-                  {/* View link */}
-                  <div style={{textAlign:'right'}}>
-                    <span style={{fontSize:12,color:'#E8471C',fontWeight:700,
-                      padding:'4px 10px',background:'rgba(232,71,28,0.07)',
-                      borderRadius:6,whiteSpace:'nowrap'}}>
-                      View →
-                    </span>
+                  {/* Tiles grid */}
+                  <div style={{display:'grid',
+                    gridTemplateColumns:`repeat(${tiles.length},1fr)`,
+                    background:'#fff'}}>
+                    {tiles.map((t, i) => (
+                      <div key={t.label} style={{
+                        padding:'20px 20px',
+                        borderRight: i < tiles.length-1 ? '1px solid #f0f0f0' : 'none',
+                        background:t.bg,
+                        position:'relative',overflow:'hidden',
+                      }}>
+                        {/* top accent */}
+                        <div style={{position:'absolute',top:0,left:0,right:0,height:3,background:t.color,opacity:0.5}}/>
+                        <div style={{fontSize:11,color:'#aaa',fontWeight:700,
+                          textTransform:'uppercase',letterSpacing:0.6,marginBottom:8,
+                          display:'flex',alignItems:'center',gap:5}}>
+                          <span>{t.icon}</span>
+                          <span>{t.label}</span>
+                        </div>
+                        <div style={{fontFamily:'monospace',fontWeight:800,fontSize:18,
+                          color:t.color,lineHeight:1}}>
+                          {t.prefix}{t.value}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               );
-            })}
-
-            {/* Total footer row */}
-            {filtered.length > 1 && (
-              <div style={{display:'grid',gridTemplateColumns:TG,padding:'13px 20px',gap:8,
-                background:'#fff8f5',borderTop:'2px solid #E8471C',alignItems:'center'}}>
-                <div style={{fontWeight:800,fontSize:12,color:'#1a1a1a',gridColumn:'1/3'}}>
-                  TOTAL ({filtered.length} project{filtered.length>1?'s':''})
-                </div>
-                <div style={{fontFamily:'monospace',fontWeight:800,color:'#1a1a1a',fontSize:13}}>
-                  ₹{fmt(sumCol('grand_total'))}
-                </div>
-                <div style={{fontFamily:'monospace',fontWeight:800,color:'#16a34a',fontSize:13}}>
-                  ₹{fmt(sumCol('total_paid'))}
-                </div>
-                <div style={{fontFamily:'monospace',fontWeight:800,color:'#E8471C',fontSize:13}}>
-                  ₹{fmt(sumCol('balance_due'))}
-                </div>
-                <div style={{fontFamily:'monospace',fontWeight:800,color:'#E8471C',fontSize:13}}>
-                  ₹{fmt(sumCol('material_cost'))}
-                </div>
-                <div style={{fontFamily:'monospace',fontWeight:800,color:'#E8471C',fontSize:13}}>
-                  ₹{fmt(sumCol('other_expenses'))}
-                </div>
-                <div style={{fontFamily:'monospace',fontWeight:800,fontSize:13,color:'#7C3AED'}}>
-                  {sumCol('total_sft')>0?sumCol('total_sft').toLocaleString('en-IN')+' SFT':'—'}
-                </div>
-                <div style={{fontFamily:'monospace',fontWeight:800,fontSize:13,
-                  color:sumCol('profit_estimate')>=0?'#16a34a':'#dc2626'}}>
-                  {sumCol('profit_estimate')>=0?'+':''}₹{fmt(sumCol('profit_estimate'))}
-                </div>
-                <div/>
-                <div/>
-                <div/>
-                <div/>
-              </div>
-            )}
-          </div>
+            })()}
+          </>
         )}
       </div>
     </div>
