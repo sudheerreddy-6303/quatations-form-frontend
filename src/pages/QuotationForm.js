@@ -695,7 +695,8 @@ export default function QuotationForm({ user }) {
       } else if (err.response?.status === 401) {
         toast.error('Unauthorized: check your API key');
       } else {
-        toast.error('Failed to save. Is the backend running?');
+        const serverMsg = err.response?.data?.message;
+        toast.error(serverMsg ? `Save failed: ${serverMsg}` : 'Failed to save. Is the backend running?', { duration: 6000 });
       }
     }
     setLoading(false);
