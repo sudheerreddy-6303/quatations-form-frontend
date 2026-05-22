@@ -101,8 +101,8 @@ function CompletionBar({ quotationId }) {
   React.useEffect(() => {
     // Already loaded
     if (typeof _cc[quotationId] === 'number') { setPct(_cc[quotationId]); return; }
-    // Already fetching
-    if (_cc[quotationId] === 'pending') return;
+    // If pending from a previous mount, clear it so this observer can re-fetch
+    if (_cc[quotationId] === 'pending') { delete _cc[quotationId]; }
 
     // Use IntersectionObserver — only load when row is visible on screen
     const el = ref.current;
@@ -3582,6 +3582,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   const [quotations,    setQuotations]    = useState([]);
   const [statusFilter,  setStatusFilter]  = useState('All');
   const [loading,    setLoading]    = useState(true);
+  const [ccReady,    setCcReady]    = useState(false); // triggers CompletionBar re-render after bulk fetch
   const [selected,   setSelected]   = useState(null);
   const [editing,    setEditing]    = useState(null);
   const [paymentQ,   setPaymentQ]   = useState(null);  // quotation for payment modal
@@ -3604,6 +3605,13 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   const fetchAll = async () => {
     try { const res=await api.get(`/quotations`); setQuotations(res.data.data||[]); } catch { toast.error('Failed to fetch'); }
     setLoading(false);
+    // Bulk-load all completion % in one request so CompletionBar reads from cache instantly
+    try {
+      const cr = await api.get('/completion-status-bulk');
+      const map = cr.data.data || {};
+      Object.entries(map).forEach(([id, pct]) => { _cc[Number(id)] = typeof pct === 'number' ? pct : 0; });
+      setCcReady(true);
+    } catch { setCcReady(true); }
   };
   useEffect(()=>{ fetchAll(); },[]);
 
@@ -4053,7 +4061,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                   {/* Project completion */}
                   <div style={{marginBottom:12}}>
                     <div style={{fontSize:11,color:'#888',fontWeight:600,marginBottom:4}}>Project Completion</div>
-                    <CompletionBar quotationId={q.id} />
+                    <CompletionBar key={q.id+'-'+ccReady} quotationId={q.id} />
                   </div>
 
                   {/* Divider */}
@@ -4089,8 +4097,8 @@ export default function QuotationList({ user = { role: 'admin' } }) {
       ) : (
         <div className="table-card">
           <table className="list-table">
-            <colgroup><col className="col-id"/><col className="col-name"/><col className="col-loc"/><col className="col-mobile"/>{isAdmin&&<col className="col-manager"/>}{isAdmin&&<col style={{minWidth:90}}/>}<col className="col-total"/><col className="col-paid"/><col className="col-balance"/><col className="col-status"/><col className="col-date"/><col className="col-actions" style={{width:110}}/><col style={{width:70,minWidth:70}}/></colgroup>
-            <thead><tr><th className="col-id">QID</th><th className="col-name">Customer</th><th className="col-loc">Location</th><th className="col-mobile">Mobile</th>{isAdmin&&<th className="col-manager">Manager</th>}{isAdmin&&<th style={{fontSize:11,minWidth:90}}>Branch</th>}<th className="col-total">Grand Total</th><th className="col-paid">Paid</th><th className="col-balance">Balance</th><th className="col-status">Status</th><th className="col-date" style={{whiteSpace:'nowrap'}}>Date / Project</th><th className="col-actions">Actions</th><th style={{fontSize:10,fontWeight:700,textAlign:'center',width:70,padding:'8px 4px',whiteSpace:'nowrap'}}>% Done</th></tr></thead>
+            <colgroup><col className="col-id"/><col className="col-name"/><col className="col-loc"/><col className="col-mobile"/>{isAdmin&&<col className="col-manager"/>}{isAdmin&&<col style={{minWidth:90}}/>}<col className="col-total"/><col className="col-paid"/><col className="col-balance"/><col className="col-status"/><col className="col-date"/><col className="col-actions" style={{width:110}}/></colgroup>
+            <thead><tr><th className="col-id">QID</th><th className="col-name">Customer</th><th className="col-loc">Location</th><th className="col-mobile">Mobile</th>{isAdmin&&<th className="col-manager">Manager</th>}{isAdmin&&<th style={{fontSize:11,minWidth:90}}>Branch</th>}<th className="col-total">Grand Total</th><th className="col-paid">Paid</th><th className="col-balance">Balance</th><th className="col-status">Status</th><th className="col-date" style={{whiteSpace:'nowrap'}}>Date / Project</th><th className="col-actions">Actions</th></tr></thead>
             <tbody>
               {filtered.map((q,idx)=>(
                 <tr key={q.id} className="list-row" style={{animationDelay:`${idx*0.04}s`}}>
@@ -4168,9 +4176,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                       onCompletion={()=>setCompletionQ(q)}
                     />
                   </td>
-                  <td style={{padding:'6px 4px',textAlign:'center',verticalAlign:'middle',width:70}}>
-                    <CompletionBar quotationId={q.id} />
-                  </td>
+
                 </tr>
               ))}
             </tbody>
