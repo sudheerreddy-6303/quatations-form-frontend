@@ -3603,7 +3603,11 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   const [pmProjectId,         setPmProjectId]          = useState(null); // pre-select a project in PM modal
 
   const fetchAll = async () => {
-    try { const res=await api.get(`/quotations`); setQuotations(res.data.data||[]); } catch { toast.error('Failed to fetch'); }
+    try { const res=await api.get(`/quotations`); setQuotations(res.data.data||[]); } catch (err) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed to fetch quotations';
+      console.error('fetchAll error:', msg, err);
+      toast.error(msg);
+    }
     setLoading(false);
     // Bulk-load all completion % in one request so CompletionBar reads from cache instantly
     try {
@@ -3684,7 +3688,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
     return new Date(b.created_at||0) - new Date(a.created_at||0);
   }).filter(q=> {
     const matchSearch =
-      q.customer_name.toLowerCase().includes(search.toLowerCase())||
+      (q.customer_name||'').toLowerCase().includes(search.toLowerCase())||
       (q.location||'').toLowerCase().includes(search.toLowerCase())||
       (q.mobile||'').includes(search);
     const matchStatus  = statusFilter === 'All' || (q.project_status||'Unbooked') === statusFilter;
@@ -4103,7 +4107,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
               {filtered.map((q,idx)=>(
                 <tr key={q.id} className="list-row" style={{animationDelay:`${idx*0.04}s`}}>
                   <td className="id-cell col-id" style={{fontWeight:700,color:'#E8471C'}}>#{q.quotation_id||q.id}</td>
-                  <td className="name-cell col-name"><div className="name-inner"><div className="name-avatar">{q.customer_name.charAt(0).toUpperCase()}</div><span>{q.customer_name}</span></div></td>
+                  <td className="name-cell col-name"><div className="name-inner"><div className="name-avatar">{(q.customer_name||'?').charAt(0).toUpperCase()}</div><span>{q.customer_name||'—'}</span></div></td>
                   <td className="loc-cell col-loc"><span className="loc-text">{q.location||'—'}</span></td>
                   <td className="phone-cell col-mobile">{q.mobile}</td>
                   {isAdmin&&<td className="col-manager" style={{fontSize:12,color:'#555',fontWeight:600}}>{q.site_manager_name||'—'}</td>}
@@ -4184,7 +4188,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
           <div className="mobile-cards">
             {filtered.map((q,idx)=>(
               <div key={q.id} className="mobile-card" style={{animationDelay:`${idx*0.04}s`}}>
-                <div className="mc-top"><div className="mc-avatar">{q.customer_name.charAt(0).toUpperCase()}</div><div className="mc-info"><div className="mc-name">{q.customer_name}</div><div className="mc-id">QID #{q.quotation_id||q.id}</div></div><div>
+                <div className="mc-top"><div className="mc-avatar">{(q.customer_name||'?').charAt(0).toUpperCase()}</div><div className="mc-info"><div className="mc-name">{q.customer_name||'—'}</div><div className="mc-id">QID #{q.quotation_id||q.id}</div></div><div>
                   <div className="mc-total">₹{Number(q.grand_total).toLocaleString('en-IN')}</div>
                   {Number(q.paid_total||0)>0 && <div style={{fontSize:11,color:'#10B981',fontWeight:700,textAlign:'right'}}>Paid ₹{Number(q.paid_total).toLocaleString('en-IN')}</div>}
                 </div></div>

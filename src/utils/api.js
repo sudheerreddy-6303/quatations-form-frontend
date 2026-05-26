@@ -23,12 +23,14 @@ api.interceptors.response.use(
   err => {
     if (err.response?.status === 401) {
       const msg = err.response?.data?.message || '';
-      if (msg.includes('expired') || msg.includes('Authentication required')) {
+      // Only clear token and reload if it was a genuine session expiry
+      // (not a first-load auth failure which would cause an infinite reload loop)
+      if (msg.includes('expired')) {
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_user');
-        // Reload to trigger login screen
         window.location.reload();
       }
+      // For 'Authentication required.' — let the component handle it, don't auto-reload
     }
     return Promise.reject(err);
   }
