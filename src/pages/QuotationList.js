@@ -1417,6 +1417,20 @@ const DEFAULT_TC = [
   'Any changes to the design or materials requested after payment will incur additional costs.',
 ];
 
+const DEFAULT_NOTES = [
+  'Sylvan 30 years for Kitchen and 21 years BWP 710 for other areas will be Provided.',
+  'Hardware Hinges "Hettich Brand" Total House Soft closing will be Provided.',
+  'Kitchen Tandem Baskets will be Provided Hettich brand.',
+  'All civil works, granite & tiles will be extra costing.',
+  'All electrical fittings and accessories not included in above quotation.',
+  'Handles 4" & 6" and 8" (price range upto Rs.500 per Handle) will be provided.',
+  'Only kitchen base will be g-profile or gola profile.',
+  'Laminates (Price Range from Rs.2000 to Rs.2500) will be provided.',
+  'It will be approximate estimation, based on actual Designs & dimensions it will be changed.',
+  'Fully Factory finishing Except TV Unit, Partition, Wall Elevation.',
+  'Booking Advance 10%.',
+];
+
 const DEFAULT_PAY_STAGES = [
   {stage:'Booking Advance',       amount:''},
   {stage:'After Design',          amount:''},
@@ -2533,19 +2547,11 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
   const tdGold = { ...tdBase, color:C.gold, fontWeight:700 };
   const COL = { name:'26%', w:'6%', h:'6%', nos:'5%', area:'7%', type:'9%', rate:'12%', total:'13%', remark:'16%' };
 
-  const NOTES = [
-    'Sylvan 30 years for Kitchen and 21 years BWP 710 for other areas will be Provided.',
-    'Hardware Hinges "Hettich Brand" Total House Soft closing will be Provided.',
-    'Kitchen Tandem Baskets will be Provided Hettich brand.',
-    'All civil works, granite & tiles will be extra costing.',
-    'All electrical fittings and accessories not included in above quotation.',
-    'Handles 4" & 6" and 8" (price range upto Rs.500 per Handle) will be provided.',
-    'Only kitchen base will be g-profile or gola profile.',
-    'Laminates (Price Range from Rs.2000 to Rs.2500) will be provided.',
-    'It will be approximate estimation, based on actual Designs & dimensions it will be changed.',
-    'Fully Factory finishing Except TV Unit, Partition, Wall Elevation.',
-    'Booking Advance 10%.',
-  ];
+  const NOTES = (() => {
+    const n = Array.isArray(data.note_items) ? data.note_items
+      : (typeof data.note_items === 'string' && data.note_items ? (()=>{ try { return JSON.parse(data.note_items); } catch { return null; } })() : null);
+    return (Array.isArray(n) && n.length) ? n : DEFAULT_NOTES;
+  })();
 
   const TableSection = ({ label, items, isAccessory, sectionColor, sectionBg }) => {
     if (!items||!items.length) return null;
@@ -2914,6 +2920,16 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
   });
   const [newTcText, setNewTcText] = useState('');
 
+  // ── Note Points ──────────────────────────────────────────────
+  const [noteItems, setNoteItems] = useState(() => {
+    if (Array.isArray(data.note_items) && data.note_items.length) return data.note_items;
+    if (typeof data.note_items === 'string' && data.note_items) {
+      try { const p = JSON.parse(data.note_items); return Array.isArray(p) && p.length ? p : [...DEFAULT_NOTES]; } catch {}
+    }
+    return [...DEFAULT_NOTES];
+  });
+  const [newNoteText, setNewNoteText] = useState('');
+
   // ── Payment stages ───────────────────────────────────────────
   const [payStages,        setPayStages]        = useState(() => normalisePayStages(data.pay_stages));
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -3043,6 +3059,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
         rooms: roomsToSave, accessories: roomsToSave.accessories,
         ceiling_data: sections,
         tc_items: Array.isArray(tcItems) ? tcItems : (typeof tcItems === 'string' ? JSON.parse(tcItems) : []),
+        note_items: Array.isArray(noteItems) ? noteItems : (typeof noteItems === 'string' ? JSON.parse(noteItems) : []),
         discount_percent: discountPercent, discount_amount: discountAmount,
         gst_percent: gstPercent, gst_amount: gstAmount,
         total_interior: totalInterior, total_ceiling: totalAllSections, grand_total: grandTotal,
@@ -3366,20 +3383,23 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                           <table className="item-table">
                             <thead><tr><th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th><th>Area sft</th><th>Type</th><th>Rate (₹)</th><th>Total (₹)</th><th>Remarks</th><th></th></tr></thead>
                             <tbody>
-                              {room.items.map((item,idx)=>(
+                              {room.items.map((item,idx)=>{
+                                const isSft = item.type === 'SFT';
+                                return (
                                 <tr key={idx} className="item-row">
                                   <td><input className="cell-input" value={item.name} onChange={e=>updateItem(key,idx,'name',e.target.value)} /></td>
-                                  <td><NumInput className="cell-input num" value={item.width}    onChange={v=>updateItem(key,idx,'width',v)} /></td>
-                                  <td><NumInput className="cell-input num" value={item.height}   onChange={v=>updateItem(key,idx,'height',v)} /></td>
+                                  <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.width}    onChange={v=>updateItem(key,idx,'width',v)} />}</td>
+                                  <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.height}   onChange={v=>updateItem(key,idx,'height',v)} />}</td>
                                   <td><NumInput className="cell-input num" value={item.nos} onChange={v=>updateItem(key,idx,'nos',v)} /></td>
-                                  <td className="calc-cell">{calcItemArea(item)||'—'}</td>
-                                  <td><select className="cell-select" value={item.type} onChange={e=>updateItem(key,idx,'type',e.target.value)}>{['BOX','FRAME','PANELLING','GLASS','FIXED'].map(t=><option key={t}>{t}</option>)}</select></td>
+                                  <td className="calc-cell">{isSft ? <NumInput className="cell-input num" value={item.sft} onChange={v=>updateItem(key,idx,'sft',v)} placeholder="SFT" /> : (calcItemArea(item)||'—')}</td>
+                                  <td><select className="cell-select" value={item.type} onChange={e=>updateItem(key,idx,'type',e.target.value)}>{['BOX','FRAME','PANELLING','GLASS','SFT','FIXED','Wall'].map(t=><option key={t}>{t}</option>)}</select></td>
                                   <td><NumInput className="cell-input num" value={item.unitCost} onChange={v=>updateItem(key,idx,'unitCost',v)} /></td>
                                   <td className="total-cell">₹{calcItemTotal(item).toLocaleString('en-IN')}</td>
                                   <td><input className="cell-input" value={item.remarks} onChange={e=>updateItem(key,idx,'remarks',e.target.value)} /></td>
                                   <td><button type="button" className="btn-remove" onClick={()=>removeItem(key,idx)}>✕</button></td>
                                 </tr>
-                              ))}
+                                );
+                              })}
                             </tbody>
                           </table>
                         </div>
@@ -3412,20 +3432,25 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                         <table className="item-table">
                           <thead><tr><th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th><th>Area sft</th><th>Type</th><th>Rate (₹)</th><th>Total (₹)</th><th>Remarks</th><th></th></tr></thead>
                           <tbody>
-                            {sec.items.map((item,idx)=>(
+                            {sec.items.map((item,idx)=>{
+                              const isSft = item.type === 'SFT';
+                              const _w = parseFloat(item.width)||0, _h = parseFloat(item.height)||0, _n = parseFloat(item.nos)||0;
+                              const whArea = (item.type!=='FIXED' && _w && _h && _n) ? parseFloat(((_w*_h*_n)/144).toFixed(2)) : 0;
+                              return (
                               <tr key={idx} className="item-row">
                                 <td><input className="cell-input" value={item.name} onChange={e=>updateSec(key,idx,'name',e.target.value)} /></td>
-                                <td><NumInput className="cell-input num" value={item.width}    onChange={v=>updateSec(key,idx,'width',v)} /></td>
-                                <td><NumInput className="cell-input num" value={item.height}   onChange={v=>updateSec(key,idx,'height',v)} /></td>
+                                <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.width}    onChange={v=>updateSec(key,idx,'width',v)} />}</td>
+                                <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.height}   onChange={v=>updateSec(key,idx,'height',v)} />}</td>
                                 <td><NumInput className="cell-input num" value={item.nos} onChange={v=>updateSec(key,idx,'nos',v)} /></td>
-                                <td className="calc-cell">{calcItemArea(item)||'—'}</td>
-                                <td><select className="cell-select" value={item.type} onChange={e=>updateSec(key,idx,'type',e.target.value)}>{['BOX','FRAME','PANELLING','GLASS','FIXED'].map(t=><option key={t}>{t}</option>)}</select></td>
+                                <td className="calc-cell">{item.type==='FIXED' ? 'Fixed' : <NumInput className="cell-input num" value={item.sft} onChange={v=>updateSec(key,idx,'sft',v)} placeholder={whArea>0?String(whArea):'SFT'} />}</td>
+                                <td><select className="cell-select" value={item.type} onChange={e=>updateSec(key,idx,'type',e.target.value)}>{['BOX','FRAME','PANELLING','GLASS','SFT','FIXED'].map(t=><option key={t}>{t}</option>)}</select></td>
                                 <td><NumInput className="cell-input num" value={item.unitCost} onChange={v=>updateSec(key,idx,'unitCost',v)} /></td>
                                 <td className="total-cell">₹{calcItemTotal(item).toLocaleString('en-IN')}</td>
                                 <td><input className="cell-input" value={item.remarks} onChange={e=>updateSec(key,idx,'remarks',e.target.value)} /></td>
                                 <td><button type="button" className="btn-remove" onClick={()=>removeSecRow(key,idx)}>✕</button></td>
                               </tr>
-                            ))}
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
@@ -3480,6 +3505,29 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                   onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();const t=newTcText.trim();if(t){setTcItems(prev=>[...prev,t]);setNewTcText('');}}}} />
                 <button type="button" className="tc-add-btn"
                   onClick={()=>{const t=newTcText.trim();if(t){setTcItems(prev=>[...prev,t]);setNewTcText('');}}}>+ Add</button>
+              </div>
+            </div>
+
+            {/* NOTE POINTS */}
+            <div className="tc-block">
+              <div className="tc-header">
+                <span className="tc-title">📝 Note Points</span>
+                <span className="tc-count">{noteItems.length} items</span>
+              </div>
+              <ol className="tc-list">
+                {noteItems.map((item,idx)=>(
+                  <li key={idx} className="tc-item">
+                    <span className="tc-text">{item}</span>
+                    <button type="button" className="tc-remove" onClick={()=>setNoteItems(prev=>prev.filter((_,i)=>i!==idx))}>✕</button>
+                  </li>
+                ))}
+              </ol>
+              <div className="tc-add-row">
+                <input className="tc-input" placeholder="Add a new note point…" value={newNoteText}
+                  onChange={e=>setNewNoteText(e.target.value)}
+                  onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();const t=newNoteText.trim();if(t){setNoteItems(prev=>[...prev,t]);setNewNoteText('');}}}} />
+                <button type="button" className="tc-add-btn"
+                  onClick={()=>{const t=newNoteText.trim();if(t){setNoteItems(prev=>[...prev,t]);setNewNoteText('');}}}>+ Add</button>
               </div>
             </div>
 

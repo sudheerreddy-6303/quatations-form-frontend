@@ -24,7 +24,7 @@ function calcTotal(item) {
   return Math.round(calcArea(item) * item.unitCost);
 }
 
-const NOTES = [
+const DEFAULT_NOTES = [
   'Sylvan 30 years for Kitchen and 21 years BWP 710 for other areas will be Provided.',
   'Hardware Hinges "Hettich Brand" Total House Soft closing will be Provided.',
   'Kitchen Tandem Baskets will be Provided Hettich brand.',
@@ -131,6 +131,11 @@ function tableSection(label, items, isAccessory, color='#E8471C', bg='#FFF0EC') 
 }
 
 export function printQuotation(data, transactions=[]) {
+  const NOTES = (() => {
+    const n = Array.isArray(data.note_items) ? data.note_items
+      : (typeof data.note_items === 'string' && data.note_items ? (()=>{ try { return JSON.parse(data.note_items); } catch { return null; } })() : null);
+    return (Array.isArray(n) && n.length) ? n : DEFAULT_NOTES;
+  })();
   // Build transaction map by stage
   const txnByStage = {};
   (transactions||[]).forEach(t => {

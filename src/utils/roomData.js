@@ -76,6 +76,14 @@ export const calcArea = (item) => {
   const h   = parseFloat(item.height) || 0;
   const nos = parseFloat(item.nos);
   const n   = isNaN(nos) || nos === 0 ? 0 : nos;
+  // SFT / manual area: when an SFT value is entered (or type is SFT), area is taken
+  // directly from that value (Nos is an optional multiplier, default 1).
+  const manualSft = parseFloat(item.sft) || 0;
+  if (item.type !== 'FIXED' && (item.type === 'SFT' || manualSft > 0)) {
+    if (!manualSft) return 0;
+    const mult = (isNaN(nos) || nos === 0) ? 1 : nos;
+    return parseFloat((manualSft * mult).toFixed(2));
+  }
   // FIXED type never uses area
   if (item.type === 'FIXED') return 0;
   // No dimensions entered yet
@@ -92,6 +100,10 @@ export const calcTotal = (item) => {
   const w        = parseFloat(item.width)    || 0;
   const h        = parseFloat(item.height)   || 0;
 
+  // SFT / manual area: total = entered SFT (× Nos multiplier) × rate
+  if (item.type !== 'FIXED' && (item.type === 'SFT' || (parseFloat(item.sft) || 0) > 0)) {
+    return Math.round(calcArea(item) * unitCost * 100) / 100;
+  }
   // FIXED: total = unitCost × nos (nos defaults to 1 if 0)
   if (item.type === 'FIXED') {
     return Math.round(unitCost * (n === 0 ? 1 : n) * 100) / 100;

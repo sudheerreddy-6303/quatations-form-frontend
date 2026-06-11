@@ -18,6 +18,20 @@ const DEFAULT_TC = [
   'Any changes to the design or materials requested after payment will incur additional costs.',
 ];
 
+const DEFAULT_NOTES = [
+  'Sylvan 30 years for Kitchen and 21 years BWP 710 for other areas will be Provided.',
+  'Hardware Hinges "Hettich Brand" Total House Soft closing will be Provided.',
+  'Kitchen Tandem Baskets will be Provided Hettich brand.',
+  'All civil works, granite & tiles will be extra costing.',
+  'All electrical fittings and accessories not included in above quotation.',
+  'Handles 4" & 6" and 8" (price range upto Rs.500 per Handle) will be provided.',
+  'Only kitchen base will be g-profile or gola profile.',
+  'Laminates (Price Range from Rs.2000 to Rs.2500) will be provided.',
+  'It will be approximate estimation, based on actual Designs & dimensions it will be changed.',
+  'Fully Factory finishing Except TV Unit, Partition, Wall Elevation.',
+  'Booking Advance 10%.',
+];
+
 const DEFAULT_PAY_STAGES = [
   { stage: 'Booking Advance',          paymentAmount: '', paymentDate: '', paidAmount: '', paidDate: '', paymentType: '', paymentDetails: '', receivedBy: '' },
   { stage: 'After Design',             paymentAmount: '', paymentDate: '', paidAmount: '', paidDate: '', paymentType: '', paymentDetails: '', receivedBy: '' },
@@ -129,18 +143,22 @@ function RoomItemTableWithRemove({ items, onUpdate, onRemove }) {
           </tr>
         </thead>
         <tbody>
-          {items.map((item, idx) => (
+          {items.map((item, idx) => {
+            const isSft = item.type === 'SFT';
+            return (
             <tr key={idx} className="item-row">
               <td><input className="cell-input" value={item.name} onChange={e => onUpdate(idx, 'name', e.target.value)} /></td>
-              <td><NumInput className="cell-input num" value={item.width}    onChange={v => onUpdate(idx, 'width',    v)} /></td>
-              <td><NumInput className="cell-input num" value={item.height}   onChange={v => onUpdate(idx, 'height',   v)} /></td>
+              <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.width}    onChange={v => onUpdate(idx, 'width',    v)} />}</td>
+              <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.height}   onChange={v => onUpdate(idx, 'height',   v)} />}</td>
               <td><NumInput className="cell-input num" value={item.nos}      onChange={v => onUpdate(idx, 'nos',      v)} /></td>
               <td className="calc-cell" style={{color: calcArea(item) > 0 ? '#E8471C' : '#aaa', fontWeight: calcArea(item) > 0 ? 600 : 400}}>
-                {item.type === 'FIXED' ? 'Fixed' : calcArea(item) > 0 ? calcArea(item) : '—'}
+                {isSft
+                  ? <NumInput className="cell-input num" value={item.sft} onChange={v => onUpdate(idx, 'sft', v)} placeholder="SFT" />
+                  : (item.type === 'FIXED' ? 'Fixed' : calcArea(item) > 0 ? calcArea(item) : '—')}
               </td>
               <td>
                 <select className="cell-select" value={item.type} onChange={e => onUpdate(idx, 'type', e.target.value)}>
-                  {['BOX','FRAME','PANELLING','GLASS','Others'].map(t => <option key={t}>{t}</option>)}
+                  {['BOX','FRAME','PANELLING','GLASS','SFT','Others'].map(t => <option key={t}>{t}</option>)}
                 </select>
               </td>
               <td><NumInput className="cell-input num" value={item.unitCost} onChange={v => onUpdate(idx, 'unitCost', v)} /></td>
@@ -148,7 +166,8 @@ function RoomItemTableWithRemove({ items, onUpdate, onRemove }) {
               <td><input className="cell-input" value={item.remarks} onChange={e => onUpdate(idx, 'remarks', e.target.value)} /></td>
               <td><button type="button" className="btn-remove" onClick={() => onRemove(idx)}>✕</button></td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
@@ -167,25 +186,24 @@ function SectionTable({ items, onUpdate, onRemove }) {
         </thead>
         <tbody>
           {items.map((item, idx) => {
-            const area  = calcArea(item);
             const total = calcTotal(item);
-            // Show SFT when type is not FIXED and W/H/nos are entered
-            const showArea = item.type !== 'FIXED' &&
-              parseFloat(item.width) > 0 &&
-              parseFloat(item.height) > 0 &&
-              parseFloat(item.nos) > 0;
+            const isSft = item.type === 'SFT';
+            const _w = parseFloat(item.width) || 0, _h = parseFloat(item.height) || 0, _n = parseFloat(item.nos) || 0;
+            const whArea = (item.type !== 'FIXED' && _w && _h && _n) ? parseFloat(((_w * _h * _n) / 144).toFixed(2)) : 0;
             return (
               <tr key={idx} className="item-row">
                 <td><input className="cell-input" value={item.name} onChange={e => onUpdate(idx, 'name', e.target.value)} /></td>
-                <td><NumInput className="cell-input num" value={item.width}    onChange={v => onUpdate(idx, 'width',    v)} placeholder="W" /></td>
-                <td><NumInput className="cell-input num" value={item.height}   onChange={v => onUpdate(idx, 'height',   v)} placeholder="H" /></td>
+                <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.width}    onChange={v => onUpdate(idx, 'width',    v)} placeholder="W" />}</td>
+                <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.height}   onChange={v => onUpdate(idx, 'height',   v)} placeholder="H" />}</td>
                 <td><NumInput className="cell-input num" value={item.nos}      onChange={v => onUpdate(idx, 'nos',      v)} placeholder="Nos" /></td>
-                <td className="calc-cell" style={{color: showArea ? '#E8471C' : '#aaa', fontWeight: showArea ? 600 : 400}}>
-                  {showArea ? area : item.type === 'FIXED' ? 'Fixed' : '—'}
+                <td className="calc-cell" style={{color: calcArea(item) > 0 ? '#E8471C' : '#aaa', fontWeight: calcArea(item) > 0 ? 600 : 400}}>
+                  {item.type === 'FIXED'
+                    ? 'Fixed'
+                    : <NumInput className="cell-input num" value={item.sft} onChange={v => onUpdate(idx, 'sft', v)} placeholder={whArea > 0 ? String(whArea) : 'SFT'} />}
                 </td>
                 <td>
                   <select className="cell-select" value={item.type} onChange={e => onUpdate(idx, 'type', e.target.value)}>
-                    {['BOX','FRAME','PANELLING','GLASS','FIXED'].map(t => <option key={t}>{t}</option>)}
+                    {['BOX','FRAME','PANELLING','GLASS','SFT','FIXED'].map(t => <option key={t}>{t}</option>)}
                   </select>
                 </td>
                 <td><NumInput className="cell-input num" value={item.unitCost} onChange={v => onUpdate(idx, 'unitCost', v)} placeholder="Rate" /></td>
@@ -421,6 +439,8 @@ export default function QuotationForm({ user }) {
   const [projectEndDate,   setProjectEndDate]   = useState('');
   const [tcItems, setTcItems] = useState([...DEFAULT_TC]);
   const [newTcText, setNewTcText] = useState('');
+  const [noteItems, setNoteItems] = useState([...DEFAULT_NOTES]);
+  const [newNoteText, setNewNoteText] = useState('');
   const [payStages, setPayStages] = useState(DEFAULT_PAY_STAGES.map(s => ({ ...s })));
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [activeRoom, setActiveRoom] = useState('mbr');
@@ -572,7 +592,7 @@ export default function QuotationForm({ user }) {
           rooms: Object.fromEntries(Object.entries(rooms).map(([k,v])=>{
             const {pdfFile,...rest}=v; return [k,rest];
           })),
-          sections, gstPercent, tcItems, payStages,
+          sections, gstPercent, tcItems, noteItems, payStages,
           savedAt: new Date().toISOString(),
         };
         localStorage.setItem('deeraj_draft', JSON.stringify(draft));
@@ -585,7 +605,7 @@ export default function QuotationForm({ user }) {
   }, [projectType, clientName, clientPhone, clientAltPhone, fullAddress,
       pincode, villaNumber, siteName, location, smName, smPhone, smDesignation, smBranch,
       projectStartDate, projectEndDate,
-      rooms, sections, gstPercent, discountPercent, tcItems, payStages]);
+      rooms, sections, gstPercent, discountPercent, tcItems, noteItems, payStages]);
 
   // Restore draft on mount
   useEffect(() => {
@@ -610,6 +630,7 @@ export default function QuotationForm({ user }) {
         if (d.gstPercent)     setGstPercent(d.gstPercent);
         if (d.discountPercent) setDiscountPercent(d.discountPercent);
         if (d.tcItems?.length)setTcItems(d.tcItems);
+        if (d.noteItems?.length)setNoteItems(d.noteItems);
         if (d.payStages?.length) setPayStages(d.payStages);
         if (d.rooms)  setRooms(prev => {
           const merged = {...prev};
@@ -677,13 +698,13 @@ export default function QuotationForm({ user }) {
         project_end_date:   projectEndDate   || null,
         rooms: roomsToSave, accessories: roomsToSave.accessories,
         pay_stages: payStages,
-        ceiling_data: sections, tc_items: Array.isArray(tcItems) ? tcItems : (typeof tcItems === 'string' ? JSON.parse(tcItems) : []), discount_percent: discountPercent, discount_amount: discountAmount, gst_percent: gstPercent, gst_amount: gstAmount,
+        ceiling_data: sections, tc_items: Array.isArray(tcItems) ? tcItems : (typeof tcItems === 'string' ? JSON.parse(tcItems) : []), note_items: Array.isArray(noteItems) ? noteItems : (typeof noteItems === 'string' ? JSON.parse(noteItems) : []), discount_percent: discountPercent, discount_amount: discountAmount, gst_percent: gstPercent, gst_amount: gstAmount,
         total_interior: totalInterior, total_ceiling: totalAllSections, grand_total: grandTotal, total_sft: totalProjectSft
       };
       const res = await api.post(`/quotations`, payload);
       toast.success(`Quotation #${res.data.quotation_id||res.data.id} saved successfully!`);
       localStorage.removeItem('deeraj_draft'); // clear draft after save
-      setClientName(''); setClientPhone(''); setClientAltPhone(''); setFullAddress(''); setPincode(''); setVillaNumber(''); setSiteName(''); setLocation(''); setSmName(user && user.role === 'manager' ? user.display : ''); setSmPhone(''); setSmDesignation(''); setSmBranch(''); setProjectStartDate(''); setProjectEndDate(''); setProjectType(''); setFloorPlan(null); setPlan2D(null); setPlan3D(null); setTcItems([...DEFAULT_TC]); setPayStages(DEFAULT_PAY_STAGES.map(s => ({ ...s })));
+      setClientName(''); setClientPhone(''); setClientAltPhone(''); setFullAddress(''); setPincode(''); setVillaNumber(''); setSiteName(''); setLocation(''); setSmName(user && user.role === 'manager' ? user.display : ''); setSmPhone(''); setSmDesignation(''); setSmBranch(''); setProjectStartDate(''); setProjectEndDate(''); setProjectType(''); setFloorPlan(null); setPlan2D(null); setPlan3D(null); setTcItems([...DEFAULT_TC]); setNoteItems([...DEFAULT_NOTES]); setPayStages(DEFAULT_PAY_STAGES.map(s => ({ ...s })));
       setRooms(() => { const r = {}; Object.entries(DEFAULT_ROOMS).forEach(([k, v]) => { r[k] = { ...v, items: v.items.map(i => ({ ...i, width:0, height:0, nos:0, unitCost:0, remarks:'' })), pdfFile: null, pdfName: '' }; }); return r; });
       setSections(() => { const s = {}; Object.entries(INITIAL_SECTIONS).forEach(([k, v]) => { s[k] = { ...v, items: v.items.map(i => ({ ...i })) }; }); return s; });
       setGstPercent(0); setDiscountPercent(0);
@@ -1199,6 +1220,41 @@ export default function QuotationForm({ user }) {
               />
               <button type="button" className="tc-add-btn"
                 onClick={() => { const t = newTcText.trim(); if (t) { setTcItems(prev => [...prev, t]); setNewTcText(''); } }}>
+                + Add
+              </button>
+            </div>
+          </div>
+
+          {/* NOTE POINTS */}
+          <div className="tc-block">
+            <div className="tc-header">
+              <span className="tc-title">📝 Note Points</span>
+              <span className="tc-count">{noteItems.length} items</span>
+            </div>
+            <ol className="tc-list">
+              {noteItems.map((item, idx) => (
+                <li key={idx} className="tc-item">
+                  <span className="tc-text">{item}</span>
+                  <button type="button" className="tc-remove" onClick={() => setNoteItems(prev => prev.filter((_,i) => i !== idx))} title="Remove">✕</button>
+                </li>
+              ))}
+            </ol>
+            <div className="tc-add-row">
+              <input
+                className="tc-input"
+                placeholder="Add a new note point…"
+                value={newNoteText}
+                onChange={e => setNewNoteText(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const t = newNoteText.trim();
+                    if (t) { setNoteItems(prev => [...prev, t]); setNewNoteText(''); }
+                  }
+                }}
+              />
+              <button type="button" className="tc-add-btn"
+                onClick={() => { const t = newNoteText.trim(); if (t) { setNoteItems(prev => [...prev, t]); setNewNoteText(''); } }}>
                 + Add
               </button>
             </div>

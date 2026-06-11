@@ -115,7 +115,7 @@ const s = StyleSheet.create({
 const fmt = (n) => `Rs. ${Number(n || 0).toLocaleString('en-IN')}`;
 const dateStr = (d) => new Date(d || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
 
-const NOTES = [
+const DEFAULT_NOTES = [
   'Sylvan 30 years for Kitchen and 21 years BWP 710 for other areas will be Provided.',
   'Hardware Hinges "Hettich Brand" Total House Soft closing will be Provided.',
   'Kitchen Tandem Baskets will be Provided Hettich brand.',
@@ -258,6 +258,10 @@ export function QuotationPDF({ data }) {
   let tcItems = data.tc_items;
   if (typeof tcItems === 'string' && tcItems) { try { tcItems = JSON.parse(tcItems); } catch { tcItems = null; } }
   if (!Array.isArray(tcItems) || !tcItems.length) tcItems = DEFAULT_TC_ITEMS;
+
+  let NOTES = data.note_items;
+  if (typeof NOTES === 'string' && NOTES) { try { NOTES = JSON.parse(NOTES); } catch { NOTES = null; } }
+  if (!Array.isArray(NOTES) || !NOTES.length) NOTES = DEFAULT_NOTES;
   let rawPayStages = data.pay_stages;
   if (typeof rawPayStages === 'string' && rawPayStages) { try { rawPayStages = JSON.parse(rawPayStages); } catch { rawPayStages = null; } }
   if (!Array.isArray(rawPayStages) || !rawPayStages.length) rawPayStages = ['Booking Advance','After Design','Material Purchase time','Carcas Installation','Doors Fitting','Handles Fitting','Finishing and Hand Over',''];
