@@ -158,7 +158,7 @@ function RoomItemTableWithRemove({ items, onUpdate, onRemove }) {
               </td>
               <td>
                 <select className="cell-select" value={item.type} onChange={e => onUpdate(idx, 'type', e.target.value)}>
-                  {['BOX','FRAME','PANELLING','GLASS','SFT','Others'].map(t => <option key={t}>{t}</option>)}
+                  {['Box','Frame','Panneling','Glass','SFT','Profile With Glass','Profile With Mirrors','Drawer','Sliding Kit','Others'].map(t => <option key={t}>{t}</option>)}
                 </select>
               </td>
               <td><NumInput className="cell-input num" value={item.unitCost} onChange={v => onUpdate(idx, 'unitCost', v)} /></td>
@@ -203,7 +203,7 @@ function SectionTable({ items, onUpdate, onRemove }) {
                 </td>
                 <td>
                   <select className="cell-select" value={item.type} onChange={e => onUpdate(idx, 'type', e.target.value)}>
-                    {['BOX','FRAME','PANELLING','GLASS','SFT','FIXED'].map(t => <option key={t}>{t}</option>)}
+                    {['BOX','FRAME','PANELLING','GLASS','SFT','FIXED','PROFILE WITH MIRROR','PROFILE WITH GLASS','DRAWERS','SLIDING KIT'].map(t => <option key={t}>{t}</option>)}
                   </select>
                 </td>
                 <td><NumInput className="cell-input num" value={item.unitCost} onChange={v => onUpdate(idx, 'unitCost', v)} placeholder="Rate" /></td>

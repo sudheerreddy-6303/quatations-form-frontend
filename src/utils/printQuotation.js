@@ -2,7 +2,8 @@
 // Generates a browser-printable HTML window from quotation data
 // Uses the EXACT same layout as the ViewModal, plus watermark
 
-const LOGO_URL = 'https://img1.wsimg.com/isteam/ip/e7e3142b-3f26-4173-bc29-b2315178edb8/DI%20logo%20(2).png/:/rs=w:559,h:192,cg:true,m/cr=w:559,h:192/qt=q:95';
+const API_BASE = (process.env.REACT_APP_API_URL || 'http://localhost:5001/api').trim();
+const LOGO_URL = `${API_BASE}/logo.png`;
 
 const SECTION_META = {
   ceiling:    { label: 'CEILING WORK',           color: '#1D4ED8', bg: '#EFF6FF' },
@@ -58,7 +59,7 @@ const PAY_TC = [
 function pageHeader(invoiceDate, smPhone, showLabel, quotationId) {
   return `
     <div class="page-header-bar">
-      <img src="${LOGO_URL}" alt="Deeraj Interiors" class="logo-img" crossorigin="anonymous"/>
+      <img src="${LOGO_URL}" alt="Deeraj Interiors" class="logo-img" referrerpolicy="no-referrer"/>
       <div style="text-align:right">
         ${showLabel ? `<div class="quotation-label">QUOTATION #${quotationId||''}</div>` : ''}
         <div class="header-meta">Date: ${invoiceDate}</div>
@@ -303,6 +304,7 @@ export function printQuotation(data, transactions=[]) {
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="referrer" content="no-referrer"/>
   <title>Quotation — ${data.customer_name}</title>
   <style>${commonPageStyles}</style>
 </head>
@@ -480,16 +482,23 @@ export function printQuotation(data, transactions=[]) {
 </div>
 
 <script>
-  // Wait for logo image to load before printing
+  // Wait for logo image to fully load AND paint before printing
   window.onload = function() {
-    var imgs = document.querySelectorAll('img');
-    var loaded = 0;
-    if (imgs.length === 0) { window.print(); window.close(); return; }
+    var imgs = Array.prototype.slice.call(document.querySelectorAll('img'));
+    var fired = false;
+    function go() {
+      if (fired) return; fired = true;
+      // small delay so the browser finishes decoding/painting the logo
+      setTimeout(function() { window.print(); window.close(); }, 350);
+    }
+    if (imgs.length === 0) { go(); return; }
+    var done = 0;
+    function check() { done++; if (done >= imgs.length) go(); }
+    // safety: never hang if the logo URL is slow or unreachable
+    setTimeout(go, 5000);
     imgs.forEach(function(img) {
-      if (img.complete) { loaded++; if (loaded===imgs.length) { window.print(); window.close(); } }
-      else {
-        img.onload = img.onerror = function() { loaded++; if (loaded===imgs.length) { window.print(); window.close(); } };
-      }
+      if (img.complete && img.naturalWidth > 0) { check(); }
+      else { img.onload = img.onerror = check; }
     });
   };
 </script>

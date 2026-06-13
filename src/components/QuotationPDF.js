@@ -2,7 +2,8 @@ import React from 'react';
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 import { calcArea, calcTotal, calcRoomTotal } from '../utils/roomData';
 
-const LOGO_URL = 'https://img1.wsimg.com/isteam/ip/e7e3142b-3f26-4173-bc29-b2315178edb8/DI%20logo%20(2).png/:/rs=w:559,h:192,cg:true,m/cr=w:559,h:192/qt=q:95';
+const API_BASE = (process.env.REACT_APP_API_URL || 'http://localhost:5001/api').trim();
+const LOGO_URL = `${API_BASE}/logo.png`;
 
 const SECTION_META = {
   ceiling:    { label: 'Ceiling Work' },

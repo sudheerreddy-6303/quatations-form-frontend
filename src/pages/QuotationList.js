@@ -3392,7 +3392,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                                   <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.height}   onChange={v=>updateItem(key,idx,'height',v)} />}</td>
                                   <td><NumInput className="cell-input num" value={item.nos} onChange={v=>updateItem(key,idx,'nos',v)} /></td>
                                   <td className="calc-cell">{isSft ? <NumInput className="cell-input num" value={item.sft} onChange={v=>updateItem(key,idx,'sft',v)} placeholder="SFT" /> : (calcItemArea(item)||'—')}</td>
-                                  <td><select className="cell-select" value={item.type} onChange={e=>updateItem(key,idx,'type',e.target.value)}>{['BOX','FRAME','PANELLING','GLASS','SFT','FIXED','Wall'].map(t=><option key={t}>{t}</option>)}</select></td>
+                                  <td><select className="cell-select" value={item.type} onChange={e=>updateItem(key,idx,'type',e.target.value)}>{['BOX','FRAME','PANELLING','GLASS','SFT','FIXED','Wall','PROFILE WITH MIRROR','PROFILE WITH GLASS','DRAWERS','SLIDING KIT'].map(t=><option key={t}>{t}</option>)}</select></td>
                                   <td><NumInput className="cell-input num" value={item.unitCost} onChange={v=>updateItem(key,idx,'unitCost',v)} /></td>
                                   <td className="total-cell">₹{calcItemTotal(item).toLocaleString('en-IN')}</td>
                                   <td><input className="cell-input" value={item.remarks} onChange={e=>updateItem(key,idx,'remarks',e.target.value)} /></td>
@@ -3443,7 +3443,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                                 <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.height}   onChange={v=>updateSec(key,idx,'height',v)} />}</td>
                                 <td><NumInput className="cell-input num" value={item.nos} onChange={v=>updateSec(key,idx,'nos',v)} /></td>
                                 <td className="calc-cell">{item.type==='FIXED' ? 'Fixed' : <NumInput className="cell-input num" value={item.sft} onChange={v=>updateSec(key,idx,'sft',v)} placeholder={whArea>0?String(whArea):'SFT'} />}</td>
-                                <td><select className="cell-select" value={item.type} onChange={e=>updateSec(key,idx,'type',e.target.value)}>{['BOX','FRAME','PANELLING','GLASS','SFT','FIXED'].map(t=><option key={t}>{t}</option>)}</select></td>
+                                <td><select className="cell-select" value={item.type} onChange={e=>updateSec(key,idx,'type',e.target.value)}>{['BOX','FRAME','PANELLING','GLASS','SFT','FIXED','PROFILE WITH MIRROR','PROFILE WITH GLASS','DRAWERS','SLIDING KIT'].map(t=><option key={t}>{t}</option>)}</select></td>
                                 <td><NumInput className="cell-input num" value={item.unitCost} onChange={v=>updateSec(key,idx,'unitCost',v)} /></td>
                                 <td className="total-cell">₹{calcItemTotal(item).toLocaleString('en-IN')}</td>
                                 <td><input className="cell-input" value={item.remarks} onChange={e=>updateSec(key,idx,'remarks',e.target.value)} /></td>
