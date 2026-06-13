@@ -316,6 +316,14 @@ export function printQuotation(data, transactions=[]) {
   <div class="page-content">
     ${pageHeader(invoiceDate, smPhone, true, quotationId)}
 
+    <!-- Company Details -->
+    <div style="padding:6px 0 8px;line-height:1.5">
+      <div style="font-size:13pt;font-weight:bold;color:#1A1A1A">DEERAJ INTERIORS</div>
+      <div style="font-size:8.5pt;color:#333">SECOND FLOOR, PLOT NO.119, KOMPALLY, JEEDIMETLA, GREEN PARK AVENUE, Hyderabad, Medchal Malkajgiri, Telangana, 500055</div>
+      <div style="font-size:8.5pt;color:#333">GSTIN/UIN: 36BDFPG9987H1ZY</div>
+      <div style="font-size:8.5pt;color:#333">State Name : Telangana, Code : 36</div>
+    </div>
+
     <!-- Client LEFT | Site Manager RIGHT -->
     <div class="info-section">
       <div class="info-col">
@@ -359,6 +367,15 @@ export function printQuotation(data, transactions=[]) {
           <span>GRAND TOTAL${gstPercent>0?' (incl. '+gstPercent+'% GST)':''}</span>
           <span>${fmtINR(grandTotal)}</span>
         </div>
+      </div>
+
+      <!-- Bank Details -->
+      <div style="margin-top:10px;border:1px solid #E0E0E0;border-radius:4px;padding:8px 12px;line-height:1.5">
+        <div style="font-size:9pt;font-weight:bold;color:#1A1A1A;margin-bottom:2px">BANK DETAILS</div>
+        <div style="font-size:8.5pt;color:#333">Deeraj Interiors</div>
+        <div style="font-size:8.5pt;color:#333">Account Number : 4623 0400 0001 80</div>
+        <div style="font-size:8.5pt;color:#333">Bank of Baroda &mdash; Kompally Branch</div>
+        <div style="font-size:8.5pt;color:#333">IFSC : 500012040</div>
       </div>
 
       <!-- Notes -->

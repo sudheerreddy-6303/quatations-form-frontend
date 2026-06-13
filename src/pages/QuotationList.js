@@ -2645,6 +2645,12 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
                   </div>
                 </div>
                 <div style={{height:3,background:C.gold}}/>
+                <div style={{padding:'10px 32px 4px',lineHeight:1.5,borderBottom:`1px solid ${C.border}`}}>
+                  <div style={{fontSize:14,fontWeight:800,color:C.dark}}>DEERAJ INTERIORS</div>
+                  <div style={{fontSize:9,color:'#444'}}>SECOND FLOOR, PLOT NO.119, KOMPALLY, JEEDIMETLA, GREEN PARK AVENUE, Hyderabad, Medchal Malkajgiri, Telangana, 500055</div>
+                  <div style={{fontSize:9,color:'#444'}}>GSTIN/UIN: 36BDFPG9987H1ZY</div>
+                  <div style={{fontSize:9,color:'#444'}}>State Name : Telangana, Code : 36</div>
+                </div>
                 <div style={{display:'flex',background:C.lightGray,borderBottom:`1px solid ${C.border}`,padding:'12px 32px',gap:0}}>
                   <div style={{flex:1,paddingRight:20}}>
                     <div style={{fontSize:8,fontWeight:700,color:'#AAA',letterSpacing:1,textTransform:'uppercase',marginBottom:6,borderBottom:`1px solid ${C.border}`,paddingBottom:3}}>Client Information</div>
@@ -2683,6 +2689,13 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
                   <div style={{background:C.lightGray,border:`0.5px solid ${C.border}`,borderRadius:3,padding:'9px 12px',marginTop:8}}>
                     <div style={{fontSize:9,fontWeight:700,marginBottom:4}}>NOTE:</div>
                     {NOTES.map((n,i)=><div key={i} style={{fontSize:8,color:C.gray,lineHeight:1.5,marginBottom:2}}>{i+1}. {n}</div>)}
+                  </div>
+                  <div style={{background:C.lightGray,border:`0.5px solid ${C.border}`,borderRadius:3,padding:'9px 12px',marginTop:8,lineHeight:1.5}}>
+                    <div style={{fontSize:9,fontWeight:700,marginBottom:2}}>BANK DETAILS</div>
+                    <div style={{fontSize:8,color:C.gray}}>Deeraj Interiors</div>
+                    <div style={{fontSize:8,color:C.gray}}>Account Number : 4623 0400 0001 80</div>
+                    <div style={{fontSize:8,color:C.gray}}>Bank of Baroda — Kompally Branch</div>
+                    <div style={{fontSize:8,color:C.gray}}>IFSC : 500012040</div>
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between',marginTop:24,paddingTop:10,borderTop:`0.5px solid ${C.border}`}}>
                     <div style={{textAlign:'center',minWidth:110}}><div style={{height:32}}/><div style={{height:1,background:C.dark,marginBottom:4}}/><div style={{fontSize:8,color:C.gray}}>CUSTOMER SIGN</div><div style={{fontSize:9,fontWeight:700}}>{data.customer_name}</div></div>
