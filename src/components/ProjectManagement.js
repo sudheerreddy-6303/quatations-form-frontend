@@ -194,8 +194,8 @@ const ORDER_CATEGORY_DATA = {
 
 const ORDER_CATEGORIES   = Object.keys(ORDER_CATEGORY_DATA);
 const ORDER_PAYMENT_MODES = ['Cash','UPI','NEFT','RTGS','Cheque','Bank Transfer','Card','Credit'];
-const ORDER_BUILD_BY      = ['In-house Team','Sub-contractor','Vendor','Direct Labour'];
-const ORDER_APPROVED_BY   = ['Manager','Director','Site Supervisor','Owner','Project Head'];
+const ORDER_BUILD_BY      = ['Seshagiri Raju','Shanti','Sunder','Site Manager'];
+const ORDER_APPROVED_BY   = ['Seshagiri Raju','Shanti','Sunder'];
 const ORDER_GST_OPTIONS   = ['No GST','5%','12%','18%','28%'];
 
 const STATUS_COLORS = {
@@ -850,6 +850,7 @@ function ProjectManagement({ onClose, preSelectedProjectId = null }) {
                   const paid = Number(p.paid_total||0);
                   const total = Number(p.grand_total||0);
                   const pct = total > 0 ? Math.round((paid/total)*100) : 0;
+                  const overBudget = false;
                   return (
                     <button key={p.id} className="pm-project-card" onClick={() => openProject(p)}>
                       <div className="pm-project-card-left">
