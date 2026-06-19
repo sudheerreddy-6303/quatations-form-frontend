@@ -1994,8 +1994,8 @@ function generateReceipt(txn, quotation, allTransactions=[]) {
       <img src="${logo}" class="r-logo" crossorigin="anonymous"/>
       <div class="co-info">
         <div class="co-name">DEERAJ INTERIORS</div>
-        <div class="co-addr">Plot No. 45, Kompally, Hyderabad — 500014 &nbsp;|&nbsp; +91-9848004312 &nbsp;|&nbsp; info@deerajinteriors.com</div>
-        <div class="co-gst">GST No: 36AABCD1234E1ZK</div>
+        <div class="co-addr">Second Floor, Plot No.119, Kompally, Jeedimetla, Green Park Avenue, Hyderabad, Medchal Malkajgiri, Telangana — 500055 &nbsp;|&nbsp; +91-90007 00930 &nbsp;|&nbsp; info@deerajinteriors.com</div>
+        <div class="co-gst">GSTIN/UIN: 36BDFPG9987H1ZY &nbsp;|&nbsp; State: Telangana, Code: 36</div>
       </div>
     </div>
     <div class="hdr-title-col">
@@ -2079,7 +2079,7 @@ function generateReceipt(txn, quotation, allTransactions=[]) {
   <!-- E-NOTE -->
   <div class="enote">
     <b>📧 This is an electronically generated receipt. No physical signature is required.</b><br>
-    This document is valid without a stamp or signature. &nbsp;|&nbsp; For queries: info@deerajinteriors.com &nbsp;|&nbsp; +91-9848004312
+    This document is valid without a stamp or signature. &nbsp;|&nbsp; For queries: info@deerajinteriors.com &nbsp;|&nbsp; +91-90007 00930
   </div>
 
   <!-- PAYMENT HISTORY -->
@@ -2103,7 +2103,7 @@ function generateReceipt(txn, quotation, allTransactions=[]) {
 
   <!-- FOOTER -->
   <div class="foot">
-    <div><b>DEERAJ INTERIORS</b> — Plot No. 45, Kompally, Hyderabad — 500014 | GST: 36AABCD1234E1ZK</div>
+    <div><b>DEERAJ INTERIORS</b> — Second Floor, Plot No.119, Kompally, Jeedimetla, Green Park Avenue, Hyderabad, Medchal Malkajgiri, Telangana — 500055 | GSTIN/UIN: 36BDFPG9987H1ZY | State Code: 36</div>
     <div>Generated: ${new Date().toLocaleDateString('en-IN')} | Ref: ${rNo}</div>
   </div>
 
