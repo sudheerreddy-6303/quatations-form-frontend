@@ -468,6 +468,7 @@ export default function QuotationForm({ user }) {
   });
   const [gstPercent,    setGstPercent]    = useState(0);
   const [discountPercent, setDiscountPercent] = useState(0);
+  const [discountAmtInput, setDiscountAmtInput] = useState(0);
   const [loading, setLoading] = useState(false);
   const [showAddRoom, setShowAddRoom] = useState(false);
   const [showAddSection, setShowAddSection] = useState(false);
@@ -592,7 +593,7 @@ export default function QuotationForm({ user }) {
           rooms: Object.fromEntries(Object.entries(rooms).map(([k,v])=>{
             const {pdfFile,...rest}=v; return [k,rest];
           })),
-          sections, gstPercent, tcItems, noteItems, payStages,
+          sections, gstPercent, discountAmtInput, tcItems, noteItems, payStages,
           savedAt: new Date().toISOString(),
         };
         localStorage.setItem('deeraj_draft', JSON.stringify(draft));
@@ -605,7 +606,7 @@ export default function QuotationForm({ user }) {
   }, [projectType, clientName, clientPhone, clientAltPhone, fullAddress,
       pincode, villaNumber, siteName, location, smName, smPhone, smDesignation, smBranch,
       projectStartDate, projectEndDate,
-      rooms, sections, gstPercent, discountPercent, tcItems, noteItems, payStages]);
+      rooms, sections, gstPercent, discountPercent, discountAmtInput, tcItems, noteItems, payStages]);
 
   // Restore draft on mount
   useEffect(() => {
@@ -629,6 +630,7 @@ export default function QuotationForm({ user }) {
         if (d.smBranch)       setSmBranch(d.smBranch);
         if (d.gstPercent)     setGstPercent(d.gstPercent);
         if (d.discountPercent) setDiscountPercent(d.discountPercent);
+        if (d.discountAmtInput) setDiscountAmtInput(d.discountAmtInput);
         if (d.tcItems?.length)setTcItems(d.tcItems);
         if (d.noteItems?.length)setNoteItems(d.noteItems);
         if (d.payStages?.length) setPayStages(d.payStages);
@@ -659,7 +661,9 @@ export default function QuotationForm({ user }) {
     roomSftMap[key] = parseFloat(room.items.reduce((s, i) => s + calcArea(i), 0).toFixed(2));
   });
   const totalProjectSft = parseFloat(Object.values(roomSftMap).reduce((s, v) => s + v, 0).toFixed(2));
-  const discountAmount = Math.round(subtotal * discountPercent / 100);
+  const discountAmount = discountAmtInput > 0
+    ? Math.min(Math.round(discountAmtInput), subtotal)
+    : Math.round(subtotal * discountPercent / 100);
   const afterDiscount  = subtotal - discountAmount;
   const gstAmount      = Math.round(afterDiscount * gstPercent / 100);
   const grandTotal     = afterDiscount + gstAmount;
@@ -707,7 +711,7 @@ export default function QuotationForm({ user }) {
       setClientName(''); setClientPhone(''); setClientAltPhone(''); setFullAddress(''); setPincode(''); setVillaNumber(''); setSiteName(''); setLocation(''); setSmName(user && user.role === 'manager' ? user.display : ''); setSmPhone(''); setSmDesignation(''); setSmBranch(''); setProjectStartDate(''); setProjectEndDate(''); setProjectType(''); setFloorPlan(null); setPlan2D(null); setPlan3D(null); setTcItems([...DEFAULT_TC]); setNoteItems([...DEFAULT_NOTES]); setPayStages(DEFAULT_PAY_STAGES.map(s => ({ ...s })));
       setRooms(() => { const r = {}; Object.entries(DEFAULT_ROOMS).forEach(([k, v]) => { r[k] = { ...v, items: v.items.map(i => ({ ...i, width:0, height:0, nos:0, unitCost:0, remarks:'' })), pdfFile: null, pdfName: '' }; }); return r; });
       setSections(() => { const s = {}; Object.entries(INITIAL_SECTIONS).forEach(([k, v]) => { s[k] = { ...v, items: v.items.map(i => ({ ...i })) }; }); return s; });
-      setGstPercent(0); setDiscountPercent(0);
+      setGstPercent(0); setDiscountPercent(0); setDiscountAmtInput(0);
       navigate('/quotations');
     } catch (err) {
       if (err.response?.status === 422) {
@@ -1268,13 +1272,17 @@ export default function QuotationForm({ user }) {
               <span className="gst-label-wrap">
                 Discount
                 <div className="gst-edit-wrap">
-                  <input type="text" inputMode="numeric" className="gst-input" value={discountPercent} min="0" max="100" onChange={e => setDiscountPercent(parseFloat(e.target.value)||0)} placeholder="0" />
+                  <input type="text" inputMode="numeric" className="gst-input" value={discountPercent} min="0" max="100" onChange={e => { setDiscountPercent(parseFloat(e.target.value)||0); setDiscountAmtInput(0); }} placeholder="0" />
                   <span className="gst-pct-sym">%</span>
+                </div>
+                <div className="gst-edit-wrap">
+                  <span className="gst-pct-sym">₹</span>
+                  <input type="text" inputMode="numeric" className="gst-input" value={discountAmtInput > 0 ? discountAmtInput : (discountPercent > 0 ? discountAmount : '')} min="0" onChange={e => { setDiscountAmtInput(parseFloat(e.target.value)||0); setDiscountPercent(0); }} placeholder="0" />
                 </div>
               </span>
               <span className="gst-amount-val" style={{color:'#10B981'}}>- ₹{discountAmount.toLocaleString('en-IN')}</span>
             </div>
-            {discountPercent > 0 && (
+            {discountAmount > 0 && (
               <div className="total-row" style={{opacity:0.75}}>
                 <span>After Discount</span><span>₹{afterDiscount.toLocaleString('en-IN')}</span>
               </div>
