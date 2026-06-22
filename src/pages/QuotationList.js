@@ -2919,6 +2919,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
   const [projectEndDate,   setProjectEndDate]   = useState(data.project_end_date   ? data.project_end_date.slice(0,10)   : '');
   const [gstPercent,      setGstPercent]      = useState(Number(data.gst_percent)      || 0);
   const [discountPercent, setDiscountPercent] = useState(Number(data.discount_percent) || 0);
+  const [discountAmtInput, setDiscountAmtInput] = useState((Number(data.discount_percent) || 0) > 0 ? 0 : (Number(data.discount_amount) || 0));
   const [saving,         setSaving]         = useState(false);
   const [minimized,      setMinimized]      = useState({});
   const toggleMinimize = (key) => setMinimized(prev => ({ ...prev, [key]: !prev[key] }));
@@ -3044,7 +3045,9 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
   Object.entries(sections).forEach(([k,sec])=>{ sectionTotals[k]=sec.items.reduce((s,it)=>s+calcItemTotal(it),0); });
   const totalAllSections = Object.values(sectionTotals).reduce((s,v)=>s+v,0);
   const subtotal         = totalInterior + totalAllSections;
-  const discountAmount   = Math.round(subtotal * discountPercent / 100);
+  const discountAmount   = discountAmtInput > 0
+    ? Math.min(Math.round(discountAmtInput), subtotal)
+    : Math.round(subtotal * discountPercent / 100);
   const afterDiscount    = subtotal - discountAmount;
   const gstAmount        = Math.round(afterDiscount * gstPercent / 100);
   const grandTotal       = afterDiscount + gstAmount;
@@ -3530,7 +3533,14 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
               <ol className="tc-list">
                 {noteItems.map((item,idx)=>(
                   <li key={idx} className="tc-item">
-                    <span className="tc-text">{item}</span>
+                    <textarea
+                      className="tc-text tc-edit"
+                      rows={1}
+                      value={item}
+                      placeholder="Edit note point…"
+                      ref={el => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                      onChange={e=>{ setNoteItems(prev=>prev.map((n,i)=>i===idx?e.target.value:n)); e.target.style.height='auto'; e.target.style.height=e.target.scrollHeight+'px'; }}
+                    />
                     <button type="button" className="tc-remove" onClick={()=>setNoteItems(prev=>prev.filter((_,i)=>i!==idx))}>✕</button>
                   </li>
                 ))}
@@ -3549,13 +3559,17 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
               <div className="total-row gst-row">
                 <span className="gst-label-wrap">Discount
                   <div className="gst-edit-wrap">
-                    <input type="text" inputMode="numeric" className="gst-input" value={discountPercent} min="0" max="100" placeholder="0" onChange={e=>setDiscountPercent(parseFloat(e.target.value)||0)} />
+                    <input type="text" inputMode="numeric" className="gst-input" value={discountPercent} min="0" max="100" placeholder="0" onChange={e=>{ setDiscountPercent(parseFloat(e.target.value)||0); setDiscountAmtInput(0); }} />
                     <span className="gst-pct-sym">%</span>
+                  </div>
+                  <div className="gst-edit-wrap">
+                    <span className="gst-pct-sym">₹</span>
+                    <input type="text" inputMode="numeric" className="gst-input" value={discountAmtInput > 0 ? discountAmtInput : (discountPercent > 0 ? discountAmount : '')} min="0" placeholder="0" onChange={e=>{ setDiscountAmtInput(parseFloat(e.target.value)||0); setDiscountPercent(0); }} />
                   </div>
                 </span>
                 <span className="gst-amount-val" style={{color:'#10B981'}}>- ₹{discountAmount.toLocaleString('en-IN')}</span>
               </div>
-              {discountPercent > 0 && (
+              {discountAmount > 0 && (
                 <div className="total-row" style={{opacity:0.75}}>
                   <span>After Discount</span><span>₹{afterDiscount.toLocaleString('en-IN')}</span>
                 </div>

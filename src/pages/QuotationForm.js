@@ -1238,7 +1238,14 @@ export default function QuotationForm({ user }) {
             <ol className="tc-list">
               {noteItems.map((item, idx) => (
                 <li key={idx} className="tc-item">
-                  <span className="tc-text">{item}</span>
+                  <textarea
+                    className="tc-text tc-edit"
+                    rows={1}
+                    value={item}
+                    placeholder="Edit note point…"
+                    ref={el => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                    onChange={e => { setNoteItems(prev => prev.map((n,i) => i === idx ? e.target.value : n)); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+                  />
                   <button type="button" className="tc-remove" onClick={() => setNoteItems(prev => prev.filter((_,i) => i !== idx))} title="Remove">✕</button>
                 </li>
               ))}

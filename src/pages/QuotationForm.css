@@ -1419,6 +1419,28 @@
   line-height: 1.6;
 }
 
+.tc-edit {
+  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--dark);
+  line-height: 1.6;
+  background: #fff;
+  border: 1px solid #E0E0E0;
+  border-radius: 6px;
+  padding: 6px 9px;
+  margin: -2px 0;
+  resize: none;
+  overflow: hidden;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.tc-edit:hover { border-color: #E8471C; }
+
+.tc-edit:focus { outline: none; border-color: #E8471C; box-shadow: 0 0 0 2px rgba(232,71,28,0.15); }
+
 .tc-remove {
   flex-shrink: 0;
   background: none;
