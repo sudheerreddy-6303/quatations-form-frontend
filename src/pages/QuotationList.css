@@ -872,3 +872,6 @@
   /* Inputs prevent iOS zoom */
   input, select, textarea { font-size: 16px !important; }
 }
+/* Total SFT row in the edit-quotation summary block */
+.sft-total-row { background: #F3F8FF; color: #1D4ED8; font-weight: 700; }
+.sft-total-row span:last-child { color: #1D4ED8; font-weight: 700; }

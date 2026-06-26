@@ -1442,6 +1442,24 @@ const DEFAULT_PAY_STAGES = [
   {stage:'',                      amount:''},
 ];
 
+/* ──────────────────────────────────────────────────────────────────────────
+   FIXED PERCENTAGE SPLIT for the "Record New Payment" scheduled amount.
+   Keyed by stage name. Should add up to 100. EDIT THESE NUMBERS as you like.
+   When a stage is selected in the Payment History form, the PAYMENT AMOUNT
+   auto-fills as that stage's % of the Grand Total. The LAST stage of each
+   quotation absorbs any rounding remainder so all stage amounts sum EXACTLY
+   to the Grand Total.
+   ────────────────────────────────────────────────────────────────────────── */
+const STAGE_PERCENTAGES = {
+  'Booking Advance':         10,
+  'After Design':            25,
+  'Material Purchase time':  25,
+  'Carcas Installation':     15,
+  'Doors Fitting':           10,
+  'Handles Fitting':          5,
+  'Finishing and Hand Over': 10,
+};
+
 /* Convert any date string to YYYY-MM-DD for <input type="date"> */
 const toInputDate = (val) => {
   if (!val) return '';
@@ -1560,9 +1578,37 @@ const TOTAL_W    = STAGE_W + Object.values(COL_WIDTHS).reduce((a,b)=>a+b,0) + 28
 const C_PDF = { brand:'#E8471C', dark:'#1A1A1A', gray:'#666', border:'#DDDDDD', white:'#fff', rowAlt:'#FAFAFA', lightBg:'#F5F5F5' };
 const cellBase = { border:'none', background:'transparent', fontFamily:'Arial,sans-serif', fontSize:11, color:'#1A1A1A', outline:'none', padding:'6px 6px', width:'100%', boxSizing:'border-box' };
 
-function PaymentModal({ payStages, setPayStages, onClose, clientName, smName, quotationId }) {
+function PaymentModal({ payStages, setPayStages, onClose, clientName, smName, quotationId, grandTotal }) {
   const overlayRef = useRef();
   const fileRefs   = useRef({});
+
+  // Predefine the schedule by the FIXED percentage split (STAGE_PERCENTAGES).
+  // Each named stage = its % of the Grand Total; the LAST named stage absorbs any
+  // rounding remainder so all stage amounts sum EXACTLY to the Grand Total.
+  // Runs when the modal opens / when the Grand Total changes.
+  React.useEffect(() => {
+    const gt = parseFloat(grandTotal) || 0;
+    if (gt <= 0) return;
+    const round2 = (n) => Math.round(n * 100) / 100;
+    setPayStages(prev => {
+      if (!Array.isArray(prev) || prev.length === 0) return prev;
+      const amtFor = (nm) => round2(gt * (Number(STAGE_PERCENTAGES[nm] || 0)) / 100);
+      // index of the last row that actually has a stage name (absorbs rounding)
+      const namedIdxs = prev.map((r, i) => ((r.stage && String(r.stage).trim()) ? i : -1)).filter(i => i >= 0);
+      if (namedIdxs.length === 0) return prev;
+      const lastNamed = namedIdxs[namedIdxs.length - 1];
+      // first pass: every named stage except the last gets its exact % amount
+      let next = prev.map((r, i) => {
+        if (!(r.stage && String(r.stage).trim())) return r;      // leave blank rows untouched
+        if (i === lastNamed) return r;                            // filled below
+        return { ...r, paymentAmount: String(amtFor(r.stage)) };
+      });
+      const sumOthers = next.reduce((s, r, i) => (i === lastNamed ? s : s + (parseFloat(r.paymentAmount) || 0)), 0);
+      next = next.map((r, i) => (i === lastNamed ? { ...r, paymentAmount: String(round2(Math.max(0, gt - sumOthers))) } : r));
+      const same = next.every((r, i) => String(r.paymentAmount) === String(prev[i].paymentAmount));
+      return same ? prev : next; // avoid re-render loop when already balanced
+    });
+  }, [grandTotal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // live transactions fetched from DB
   const [transactions, setTransactions] = React.useState([]);
@@ -1616,6 +1662,18 @@ function PaymentModal({ payStages, setPayStages, onClose, clientName, smName, qu
 
   const totalScheduled = payStages.reduce((s, r) => s + (parseFloat(r.paymentAmount) || 0), 0);
   const totalActualPaid = transactions.reduce((s, t) => s + Number(t.paid_amount || 0), 0);
+
+  // Payments recorded against a stage that is NOT in the listed schedule ("Other"/unmatched).
+  const listedStageKeys = new Set(
+    payStages.map(r => (r.stage || '').trim().toLowerCase()).filter(Boolean)
+  );
+  const otherPaymentsTxns = transactions.filter(
+    t => !listedStageKeys.has((t.stage_name || '').trim().toLowerCase())
+  );
+  const otherPaymentsPaid = otherPaymentsTxns.reduce((s, t) => s + Number(t.paid_amount || 0), 0);
+  const latestOtherTxn = otherPaymentsTxns[otherPaymentsTxns.length - 1] || null;
+  // Remaining unpaid balance against the Grand Total.
+  const remainingBalance = (parseFloat(grandTotal) || 0) - totalActualPaid;
 
   return (
     <div ref={overlayRef} onClick={e=>e.target===overlayRef.current&&onClose()}
@@ -1689,11 +1747,13 @@ function PaymentModal({ payStages, setPayStages, onClose, clientName, smName, qu
                         {isPaid && <span style={{ position:'absolute', right:4, top:'50%', transform:'translateY(-50%)', fontSize:10, color:'#15803D', fontWeight:700 }}>✓</span>}
                       </td>
 
-                      {/* Scheduled amount (editable) */}
+                      {/* Scheduled amount (predefined by fixed % split — read-only/constant) */}
                       <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'2px 4px' }}>
                         <input type="text" inputMode="numeric" value={row.paymentAmount}
-                          onChange={e=>{const v=e.target.value;if(/^[0-9]*\.?[0-9]*$/.test(v))update(idx,'paymentAmount',v);}}
-                          style={{ ...cellBase, textAlign:'right', color: scheduled>0?'#1D4ED8':C_PDF.dark, fontWeight: scheduled>0?700:400 }}
+                          readOnly tabIndex={-1}
+                          onChange={()=>{}}
+                          title="Predefined by fixed percentage split — not editable"
+                          style={{ ...cellBase, textAlign:'right', color: scheduled>0?'#1D4ED8':C_PDF.dark, fontWeight: scheduled>0?700:400, background:'#F8F9FB', cursor:'not-allowed' }}
                           placeholder="0" />
                       </td>
 
@@ -1777,6 +1837,54 @@ function PaymentModal({ payStages, setPayStages, onClose, clientName, smName, qu
                     </tr>
                   );
                 })}
+
+                {/* Other Payments row — payments recorded against stages not in the schedule.
+                    Computed & read-only (not a saved stage). Shown only when such payments exist. */}
+                {otherPaymentsPaid > 0 && (
+                  <tr style={{ background:'#FFFDF5' }}>
+                    <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 10px', fontWeight:700, color:C_PDF.dark, fontStyle:'italic' }}>Other Payments</td>
+                    <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', textAlign:'right', color:'#CCC' }}>—</td>
+                    <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', color:'#CCC' }}>—</td>
+                    <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', textAlign:'right' }}>
+                      <span style={{ fontWeight:700, color:'#15803D', fontSize:12 }}>₹{otherPaymentsPaid.toLocaleString('en-IN')}</span>
+                    </td>
+                    <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px' }}>
+                      {latestOtherTxn?.paid_date ? (
+                        <span style={{ fontSize:11, color:C_PDF.dark }}>
+                          {new Date(latestOtherTxn.paid_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
+                        </span>
+                      ) : <span style={{ color:'#CCC', fontSize:10 }}>—</span>}
+                    </td>
+                    <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px' }}>
+                      {latestOtherTxn?.payment_type ? (
+                        <span style={{ background:'#EFF6FF', color:'#1D4ED8', borderRadius:20, padding:'2px 7px', fontSize:10, fontWeight:600 }}>{latestOtherTxn.payment_type}</span>
+                      ) : <span style={{ color:'#CCC', fontSize:10 }}>—</span>}
+                    </td>
+                    <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', color:'#CCC' }}>—</td>
+                    <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', color:'#CCC' }}>—</td>
+                    <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', textAlign:'center', color:'#CCC' }}>—</td>
+                    <td style={{ borderBottom:`0.5px solid ${C_PDF.border}` }} />
+                  </tr>
+                )}
+
+                {/* Remaining Balance row — Grand Total minus everything received so far.
+                    Computed & read-only (not a saved stage). */}
+                <tr style={{ background: remainingBalance > 0 ? '#FFF5F5' : '#F0FDF4' }}>
+                  <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 10px', fontWeight:700, fontStyle:'italic', color: remainingBalance > 0 ? '#DC2626' : '#15803D' }}>
+                    {remainingBalance > 0 ? 'Remaining Balance' : 'Fully Paid'}
+                  </td>
+                  <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', textAlign:'right', color:'#CCC' }}>—</td>
+                  <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', color:'#CCC' }}>—</td>
+                  <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', textAlign:'right' }}>
+                    <span style={{ fontWeight:700, fontSize:12, color: remainingBalance > 0 ? '#DC2626' : '#15803D' }}>₹{Math.max(0, remainingBalance).toLocaleString('en-IN')}</span>
+                  </td>
+                  <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', color:'#CCC' }}>—</td>
+                  <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', color:'#CCC' }}>—</td>
+                  <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', color:'#CCC' }}>—</td>
+                  <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', color:'#CCC' }}>—</td>
+                  <td style={{ borderBottom:`0.5px solid ${C_PDF.border}`, borderRight:`0.5px solid ${C_PDF.border}`, padding:'6px 8px', textAlign:'center', color:'#CCC' }}>—</td>
+                  <td style={{ borderBottom:`0.5px solid ${C_PDF.border}` }} />
+                </tr>
 
                 {/* Add row button */}
                 <tr>
@@ -2132,6 +2240,23 @@ function PaymentTransactionsModal({ quotation, onClose, onPaymentSaved, user }) 
 
   const grandTotal = Number(quotation.grand_total || 0);
 
+  /* Scheduled amount for a selected stage = its fixed % of the Grand Total.
+     The LAST stage of this quotation absorbs any rounding remainder so the
+     stage amounts always add up EXACTLY to the Grand Total. Returns '' for
+     "Other" / unknown stages so they stay manual. */
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const scheduledForStage = (stageName) => {
+    const gt = Number(grandTotal) || 0;
+    if (!stageName || stageName === 'Other' || gt <= 0) return '';
+    const idx = stages.indexOf(stageName);
+    if (idx === -1) return '';
+    const amtFor = (nm) => round2(gt * (Number(STAGE_PERCENTAGES[nm] || 0)) / 100);
+    const isLast = idx === stages.length - 1;
+    if (!isLast) return String(amtFor(stageName));
+    const sumOthers = stages.reduce((s, nm, i) => (i === idx ? s : s + amtFor(nm)), 0);
+    return String(round2(Math.max(0, gt - sumOthers)));
+  };
+
   const fetchTxns = async () => {
     try {
       const res = await api.get(`/quotations/${quotation.id}/transactions`);
@@ -2251,7 +2376,7 @@ function PaymentTransactionsModal({ quotation, onClose, onPaymentSaved, user }) 
             <div style={{display:'grid',gridTemplateColumns:'1.5fr 1fr 1fr',gap:12,marginBottom:12}}>
               <div>
                 <label style={{fontSize:11,fontWeight:700,color:C.gray,display:'block',marginBottom:4}}>STAGE</label>
-                <select value={form.stage_name} onChange={e=>setForm(p=>({...p,stage_name:e.target.value}))} style={{...inp,cursor:'pointer'}}>
+                <select value={form.stage_name} onChange={e=>{const sn=e.target.value;const sched=scheduledForStage(sn);setForm(p=>({...p,stage_name:sn,payment_amount: sched!=='' ? sched : p.payment_amount}));}} style={{...inp,cursor:'pointer'}}>
                   <option value="">— Select Stage —</option>
                   {stages.map(s=><option key={s} value={s}>{s}</option>)}
                   <option value="Other">Other</option>
@@ -3052,6 +3177,12 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
   const gstAmount        = Math.round(afterDiscount * gstPercent / 100);
   const grandTotal       = afterDiscount + gstAmount;
 
+  // Total project SFT (same calc used when saving total_sft below) — for display in the summary.
+  const totalProjectSft  = parseFloat(Object.entries(rooms).reduce((s, [k, r]) => {
+    if (k === 'accessories') return s;
+    return s + r.items.reduce((ss, i) => ss + calcArea(i), 0);
+  }, 0).toFixed(2));
+
   // ── Save ─────────────────────────────────────────────────────
   const handleSave = async () => {
     if (!clientName||!clientPhone) { toast.error('Name and phone are required'); return; }
@@ -3556,6 +3687,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
 
             <div className="totals-block">
               <div className="total-row subtotal-row"><span>Subtotal</span><span>₹{subtotal.toLocaleString('en-IN')}</span></div>
+              <div className="total-row sft-total-row"><span>📐 Total SFT</span><span>{totalProjectSft.toLocaleString('en-IN')} SFT</span></div>
               <div className="total-row gst-row">
                 <span className="gst-label-wrap">Discount
                   <div className="gst-edit-wrap">

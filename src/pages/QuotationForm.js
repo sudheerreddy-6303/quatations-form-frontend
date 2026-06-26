@@ -1275,6 +1275,9 @@ export default function QuotationForm({ user }) {
             <div className="total-row subtotal-row">
               <span>Subtotal</span><span>₹{subtotal.toLocaleString('en-IN')}</span>
             </div>
+            <div className="total-row sft-total-row">
+              <span>📐 Total SFT</span><span>{totalProjectSft.toLocaleString('en-IN')} SFT</span>
+            </div>
             <div className="total-row gst-row">
               <span className="gst-label-wrap">
                 Discount
