@@ -358,7 +358,7 @@ export function QuotationPDF({ data }) {
             return (
               <ItemTableSection
                 key={secKey}
-                label={meta ? meta.label : secKey}
+                label={meta ? meta.label : ((secData && secData.label) || secKey)}
                 items={secData.items}
                 sno={null}
                 isAccessory={false}

@@ -209,7 +209,7 @@ export function printQuotation(data, transactions=[]) {
   const sectionsHTML = isNewFmt
     ? Object.entries(sections).map(([k,sec]) => {
         if (!sec||!sec.items||!sec.items.length) return '';
-        const meta = SECTION_META[k]||{label:k,color:'#888',bg:'#F5F5F5'};
+        const meta = SECTION_META[k]||{label:(sec&&sec.label)||k,color:'#888',bg:'#F5F5F5'};
         return tableSection(meta.label, sec.items, false, meta.color, meta.bg);
       }).join('')
     : `

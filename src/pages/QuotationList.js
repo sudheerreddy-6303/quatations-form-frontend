@@ -2798,7 +2798,7 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
                     <span style={{fontWeight:700,color:C.gold,fontSize:12}}>Rs. {totalInterior.toLocaleString('en-IN')}</span>
                   </div>
                   {isNewFmt
-                    ? Object.entries(sections).map(([k,sec])=>{const meta=SECTION_META[k]||{label:k,color:'#888',bg:'#F5F5F5'};return <TableSection key={k} label={meta.label} items={sec&&sec.items} isAccessory={false} sectionColor={meta.color} sectionBg={meta.bg}/>;})
+                    ? Object.entries(sections).map(([k,sec])=>{const meta=SECTION_META[k]||{label:(sec&&sec.label)||k,color:'#888',bg:'#F5F5F5'};return <TableSection key={k} label={meta.label} items={sec&&sec.items} isAccessory={false} sectionColor={meta.color} sectionBg={meta.bg}/>;})
                     : null
                   }
                   <div style={{margin:'12px 0',border:`1px solid ${C.border}`,borderRadius:4,overflow:'hidden'}}>
