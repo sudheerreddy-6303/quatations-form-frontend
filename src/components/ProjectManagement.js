@@ -782,7 +782,7 @@ function ProjectManagement({ onClose, preSelectedProjectId = null }) {
     } catch { toast.error('Failed to update status.'); }
   };
 
-  const handleOverlayClick = e => { if (e.target === overlayRef.current) onClose(); };
+  const handleOverlayClick = e => { if (e.target === overlayRef.current) { /* onClose(); — disabled: clicking empty space outside the card should NOT close it. Close only via ✕ button. */ } };
 
   const filtered = projects.filter(p => {
     const q = search.toLowerCase();
