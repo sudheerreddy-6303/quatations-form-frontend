@@ -444,6 +444,79 @@
 /* Mobile cards hidden on desktop */
 .mobile-cards { display: none; }
 
+/* ─────────────────────────────────────────────
+   DESKTOP CARD GRID — replaces the old list-table
+   ───────────────────────────────────────────── */
+.q-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 16px;
+  padding: 16px;
+}
+.q-card {
+  background: #FFFFFF;
+  border: 1px solid #EFEFEF;
+  border-radius: 16px;
+  padding: 16px 16px 14px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  animation: fadeUp 0.4s ease forwards;
+  opacity: 0;
+}
+.q-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(232,71,28,0.10);
+  border-color: #FBD5C9;
+}
+
+/* Header */
+.qc-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.qc-head-left { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
+.qc-avatar {
+  width: 42px; height: 42px; flex-shrink: 0;
+  background: #FFF0EC; border: 1px solid #E8471C44; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'Cormorant Garamond', serif; font-size: 19px; font-weight: 600; color: #E8471C;
+}
+.qc-titles { display: flex; flex-direction: column; min-width: 0; }
+.qc-name { font-size: 15px; font-weight: 700; color: #1A1A1A; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qc-site { font-size: 11px; color: #E8471C; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qc-id   { font-size: 11px; color: #AAAAAA; font-weight: 600; margin-top: 1px; }
+.qc-status { flex-shrink: 0; }
+
+/* Info grid */
+.qc-info {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 9px 12px;
+  padding: 11px 0;
+  border-top: 1px solid #F3F3F3; border-bottom: 1px solid #F3F3F3;
+}
+.qc-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.qc-label { font-size: 9px; font-weight: 700; letter-spacing: 0.6px; text-transform: uppercase; color: #9AA0A6; }
+.qc-value { font-size: 13px; color: #333; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.qc-mono  { font-family: monospace; letter-spacing: 0.5px; color: #555; }
+.qc-branch { display: inline-block; background:#EFF6FF; color:#1D4ED8; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:600; }
+
+/* Money strip */
+.qc-money { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.qc-money-item {
+  display: flex; flex-direction: column; gap: 3px; min-width: 0;
+  background: #FAFAFA; border: 1px solid #F0F0F0; border-radius: 11px; padding: 9px 10px;
+}
+.qc-amount { font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qc-total { color: #E8471C; }
+.qc-paid  { color: #10B981; }
+
+/* Dates */
+.qc-dates { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.qc-date-created { font-size: 11px; color: #888; font-weight: 500; }
+
+/* Actions */
+.qc-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
+.qc-actions .tbl-btn { flex: 0 1 auto; }
+
 /* MOBILE (≤ 768px) — replace table with cards */
 @media (max-width: 768px) {
   .list-page { padding: 0; }
@@ -453,6 +526,7 @@
 
   .table-card { border-radius: 0; border: none; box-shadow: none; background: transparent; overflow: visible; max-height: none; }
   .list-table  { display: none; }
+  .q-cards { display: none; }
   .mobile-cards { display: flex; flex-direction: column; gap: 12px; }
 
   .mobile-card {

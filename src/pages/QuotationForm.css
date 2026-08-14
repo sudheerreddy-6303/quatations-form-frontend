@@ -1312,6 +1312,82 @@
   white-space: nowrap;
 }
 
+/* ─── ROOM REORDER (drag + move buttons) ────────────────────── */
+.nav-overview-item { cursor: grab; user-select: none; -webkit-user-select: none; -webkit-user-drag: element; }
+.nav-overview-item:active { cursor: grabbing; }
+
+/* Inner clickable link (keeps jump-to-card working; not itself draggable) */
+.nav-ov-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.nav-ov-grip {
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: 1;
+  color: #BBB;
+  cursor: grab;
+  user-select: none;
+}
+.nav-overview-item:hover .nav-ov-grip { color: var(--chip-color); }
+
+/* Chip being dragged */
+.nav-overview-item.dragging {
+  opacity: 0.5;
+  border-style: dashed;
+  border-color: var(--chip-color);
+  transform: scale(0.98);
+}
+
+/* Chip currently under the cursor as a drop target */
+.nav-overview-item.drag-over {
+  border-color: var(--chip-color);
+  background: color-mix(in srgb, var(--chip-color) 12%, white);
+  box-shadow: inset 3px 0 0 var(--chip-color);
+}
+
+/* Left / right move controls */
+.nav-ov-move {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+.nav-ov-move-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: #777;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+.nav-ov-move-btn:hover {
+  border-color: var(--chip-color);
+  color: var(--chip-color);
+  background: color-mix(in srgb, var(--chip-color) 8%, white);
+}
+.nav-ov-move-btn.disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* ─── OTHER WORKS ADD SECTION ───────────────────────────────── */
 .nav-overview-group-title-row {
   display: flex;

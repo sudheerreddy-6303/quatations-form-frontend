@@ -474,6 +474,8 @@ export default function QuotationForm({ user }) {
   const [showAddSection, setShowAddSection] = useState(false);
   const [newSectionName, setNewSectionName] = useState('');
   const [newRoomName, setNewRoomName] = useState('');
+  const [dragRoomKey, setDragRoomKey] = useState(null);   // key of the room chip currently being dragged
+  const [dragOverRoomKey, setDragOverRoomKey] = useState(null); // key of the chip currently hovered as drop target
   const fileInputRefs = useRef({});
 
   const updateItem = (roomKey, idx, field, val) => {
@@ -487,6 +489,39 @@ export default function QuotationForm({ user }) {
   };
   const updateRoomLabel = (roomKey, newLabel) => {
     setRooms(prev => ({ ...prev, [roomKey]: { ...prev[roomKey], label: newLabel } }));
+  };
+
+  /* Reorder rooms: move `fromKey` so it sits at `toKey`'s position.
+     Rebuilds the rooms object in the new key order (JS preserves the
+     insertion order of string keys, so both the nav chips and the
+     stacked room cards below re-render in the new order). */
+  const reorderRooms = (fromKey, toKey) => {
+    if (!fromKey || !toKey || fromKey === toKey) return;
+    setRooms(prev => {
+      const keys = Object.keys(prev);
+      const from = keys.indexOf(fromKey);
+      const to = keys.indexOf(toKey);
+      if (from === -1 || to === -1) return prev;
+      keys.splice(to, 0, keys.splice(from, 1)[0]);
+      const next = {};
+      keys.forEach(k => { next[k] = prev[k]; });
+      return next;
+    });
+  };
+
+  /* Nudge a room one slot left/right — arrow-button fallback for
+     touch devices where native HTML5 drag isn't available. */
+  const moveRoom = (roomKey, dir) => {
+    setRooms(prev => {
+      const keys = Object.keys(prev);
+      const i = keys.indexOf(roomKey);
+      const j = i + dir;
+      if (i === -1 || j < 0 || j >= keys.length) return prev;
+      [keys[i], keys[j]] = [keys[j], keys[i]];
+      const next = {};
+      keys.forEach(k => { next[k] = prev[k]; });
+      return next;
+    });
   };
 
   const updateSectionItem = (secKey, idx, field, val) => {
@@ -635,10 +670,11 @@ export default function QuotationForm({ user }) {
         if (d.noteItems?.length)setNoteItems(d.noteItems);
         if (d.payStages?.length) setPayStages(d.payStages);
         if (d.rooms)  setRooms(prev => {
-          const merged = {...prev};
-          Object.entries(d.rooms).forEach(([k,v]) => {
-            merged[k] = {...v, pdfFile: null};
-          });
+          // Honor the saved room ORDER first (so a reordered layout is restored),
+          // then keep any default rooms that weren't in the saved draft — nothing dropped.
+          const merged = {};
+          Object.entries(d.rooms).forEach(([k,v]) => { merged[k] = {...v, pdfFile: null}; });
+          Object.entries(prev).forEach(([k,v]) => { if (!(k in merged)) merged[k] = v; });
           return merged;
         });
         if (d.sections) setSections(prev => ({...prev, ...d.sections}));
@@ -1011,14 +1047,39 @@ export default function QuotationForm({ user }) {
             <div className="nav-overview-group">
               <div className="nav-overview-group-title">🏠 Rooms</div>
               <div className="nav-overview-grid">
-                {Object.entries(rooms).map(([key, room]) => {
+                {Object.entries(rooms).map(([key, room], idx, arr) => {
                   const roomTotal = calcRoomTotal(room.items);
+                  const isDragging = dragRoomKey === key;
+                  const isDropTarget = dragOverRoomKey === key && dragRoomKey && dragRoomKey !== key;
                   return (
-                    <a key={key} href={"#room-card-" + key} className="nav-overview-item" style={{ '--chip-color': room.color }}>
-                      <span className="nav-ov-icon">{ROOM_ICONS[key] || '🚪'}</span>
-                      <span className="nav-ov-name">{room.label}</span>
-                      <span className="nav-ov-amt">{roomTotal === 0 ? '—' : '₹' + roomTotal.toLocaleString('en-IN')}</span>
-                    </a>
+                    <div key={key}
+                      className={`nav-overview-item${isDragging ? ' dragging' : ''}${isDropTarget ? ' drag-over' : ''}`}
+                      style={{ '--chip-color': room.color }}
+                      draggable
+                      onDragStart={e => { setDragRoomKey(key); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', key); } catch (_) {} }}
+                      onDragEnter={e => { e.preventDefault(); }}
+                      onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverRoomKey !== key) setDragOverRoomKey(key); }}
+                      onDragLeave={() => { if (dragOverRoomKey === key) setDragOverRoomKey(null); }}
+                      onDrop={e => { e.preventDefault(); const from = e.dataTransfer.getData('text/plain') || dragRoomKey; reorderRooms(from, key); setDragRoomKey(null); setDragOverRoomKey(null); }}
+                      onDragEnd={() => { setDragRoomKey(null); setDragOverRoomKey(null); }}
+                      title="Drag to reorder — or use the ‹ › buttons">
+                      <span className="nav-ov-grip" aria-hidden="true">⠿</span>
+                      <a href={"#room-card-" + key} className="nav-ov-link" draggable={false}>
+                        <span className="nav-ov-icon">{ROOM_ICONS[key] || '🚪'}</span>
+                        <span className="nav-ov-name">{room.label}</span>
+                        <span className="nav-ov-amt">{roomTotal === 0 ? '—' : '₹' + roomTotal.toLocaleString('en-IN')}</span>
+                      </a>
+                      <span className="nav-ov-move">
+                        <span role="button" tabIndex={0} aria-label="Move left"
+                          className={`nav-ov-move-btn${idx === 0 ? ' disabled' : ''}`}
+                          onClick={e => { e.preventDefault(); e.stopPropagation(); if (idx > 0) moveRoom(key, -1); }}
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); if (idx > 0) moveRoom(key, -1); } }}>‹</span>
+                        <span role="button" tabIndex={0} aria-label="Move right"
+                          className={`nav-ov-move-btn${idx === arr.length - 1 ? ' disabled' : ''}`}
+                          onClick={e => { e.preventDefault(); e.stopPropagation(); if (idx < arr.length - 1) moveRoom(key, 1); }}
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); if (idx < arr.length - 1) moveRoom(key, 1); } }}>›</span>
+                      </span>
+                    </div>
                   );
                 })}
               </div>

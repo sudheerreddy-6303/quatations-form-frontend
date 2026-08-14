@@ -25,6 +25,19 @@ function calcTotal(item) {
   return Math.round(calcArea(item) * item.unitCost);
 }
 
+// Whether a row/section actually has values entered (so untouched default
+// rows — named but all-zero — don't print). A row is "filled" if any
+// measurement, quantity, rate, or computed total is greater than zero.
+function rowHasValue(it, isAccessory) {
+  if (!it) return false;
+  const n = v => Number(v) || 0;
+  if (isAccessory) return n(it.nos) > 0 || n(it.unitCost) > 0;
+  return n(it.width) > 0 || n(it.height) > 0 || n(it.nos) > 0 || n(it.unitCost) > 0 || calcTotal(it) > 0;
+}
+function sectionHasValues(items, isAccessory) {
+  return Array.isArray(items) && items.some(it => rowHasValue(it, isAccessory));
+}
+
 const DEFAULT_NOTES = [
   'Sylvan 30 years for Kitchen and 21 years BWP 710 for other areas will be Provided.',
   'Hardware Hinges "Hettich Brand" Total House Soft closing will be Provided.',
@@ -73,6 +86,7 @@ function pageHeader(invoiceDate, smPhone, showLabel, quotationId) {
 
 function tableSection(label, items, isAccessory, color='#E8471C', bg='#FFF0EC') {
   if (!items || !items.length) return '';
+  if (!sectionHasValues(items, isAccessory)) return '';   // hide untouched/empty sections
   const total = isAccessory
     ? items.reduce((s,it) => s + (it.nos * it.unitCost), 0)
     : items.reduce((s,it) => s + calcTotal(it), 0);
@@ -156,10 +170,21 @@ export function printQuotation(data, transactions=[]) {
 
   const totalInterior = Number(data.total_interior||0);
   const totalCeiling  = Number(data.total_ceiling ||0);
-  const subtotal      = totalInterior + totalCeiling;
+
+  // Drop a stored ceiling amount that has no line items behind it, so the
+  // subtotal / grand total match what actually prints.
+  const ceilingHasValues = isNewFmt
+    ? Object.values(sections || {}).some(sec => sec && sectionHasValues(sec.items, false))
+    : (Number(cd.plainArea) > 0 || Number(cd.plainRate) > 0 ||
+       Number(cd.stripLength) > 0 || Number(cd.stripRate) > 0 ||
+       Number(cd.electricalLabour) > 0);
+  const effectiveCeiling = ceilingHasValues ? totalCeiling : 0;
+  const phantomCeiling   = totalCeiling - effectiveCeiling;
+
+  const subtotal      = totalInterior + effectiveCeiling;
   const gstPercent    = Number(data.gst_percent||0);
   const gstAmount     = Number(data.gst_amount ||0);
-  const grandTotal    = Number(data.grand_total ||0);
+  const grandTotal    = Number(data.grand_total ||0) - phantomCeiling;
 
   const smName   = data.site_manager_name || '';
   const smDesig  = data.site_manager_designation || 'Site Manager';
@@ -212,7 +237,13 @@ export function printQuotation(data, transactions=[]) {
         const meta = SECTION_META[k]||{label:(sec&&sec.label)||k,color:'#888',bg:'#F5F5F5'};
         return tableSection(meta.label, sec.items, false, meta.color, meta.bg);
       }).join('')
-    : `
+    : (() => {
+        // Legacy ceiling — only show rows / the whole block when values are entered
+        const hasPlain = Number(cd.plainArea) > 0 || Number(cd.plainRate) > 0;
+        const hasStrip = Number(cd.stripLength) > 0 || Number(cd.stripRate) > 0;
+        const hasElec  = Number(cd.electricalLabour) > 0;
+        if (!hasPlain && !hasStrip && !hasElec) return '';   // nothing entered → hide entirely
+        return `
       <div class="section-label-bar" style="border-left:3px solid #E8471C;background:#FFF0EC">
         <span style="font-weight:700;font-size:9pt;color:#1A1A1A">CEILING WORK ESTIMATION</span>
         <span style="font-weight:700;font-size:9pt;color:#E8471C">${fmtINR(totalCeiling)}</span>
@@ -226,11 +257,12 @@ export function printQuotation(data, transactions=[]) {
           <th style="width:20%;text-align:left">REMARKS</th>
         </tr></thead>
         <tbody>
-          <tr><td>Plain Area</td><td style="text-align:center">${cd.plainArea||0} sft</td><td style="text-align:center">${cd.plainRate||0}</td><td style="text-align:right;color:#E8471C;font-weight:700">${((cd.plainArea||0)*(cd.plainRate||0)).toLocaleString('en-IN')}</td><td>Incl. 2 cot Putti &amp; Painting</td></tr>
-          <tr style="background:#FAFAFA"><td>Strip Light Cutting</td><td style="text-align:center">${cd.stripLength||0} ft</td><td style="text-align:center">${cd.stripRate||0}</td><td style="text-align:right;color:#E8471C;font-weight:700">${((cd.stripLength||0)*(cd.stripRate||0)).toLocaleString('en-IN')}</td><td></td></tr>
-          <tr><td>Electrical Labour Charges</td><td style="text-align:center">—</td><td style="text-align:center">—</td><td style="text-align:right;color:#E8471C;font-weight:700">${(cd.electricalLabour||0).toLocaleString('en-IN')}</td><td></td></tr>
+          ${hasPlain ? `<tr><td>Plain Area</td><td style="text-align:center">${cd.plainArea||0} sft</td><td style="text-align:center">${cd.plainRate||0}</td><td style="text-align:right;color:#E8471C;font-weight:700">${((cd.plainArea||0)*(cd.plainRate||0)).toLocaleString('en-IN')}</td><td>Incl. 2 cot Putti &amp; Painting</td></tr>` : ''}
+          ${hasStrip ? `<tr style="background:#FAFAFA"><td>Strip Light Cutting</td><td style="text-align:center">${cd.stripLength||0} ft</td><td style="text-align:center">${cd.stripRate||0}</td><td style="text-align:right;color:#E8471C;font-weight:700">${((cd.stripLength||0)*(cd.stripRate||0)).toLocaleString('en-IN')}</td><td></td></tr>` : ''}
+          ${hasElec ? `<tr><td>Electrical Labour Charges</td><td style="text-align:center">—</td><td style="text-align:center">—</td><td style="text-align:right;color:#E8471C;font-weight:700">${(cd.electricalLabour||0).toLocaleString('en-IN')}</td><td></td></tr>` : ''}
         </tbody>
       </table>`;
+      })();
 
   // Watermark SVG (diagonal "DEERAJ INTERIORS" repeated)
   const watermark = `

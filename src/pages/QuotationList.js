@@ -3100,6 +3100,10 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
     return r;
   });
 
+  // Drag-to-reorder state for the room chips (edit modal)
+  const [dragRoomKey, setDragRoomKey] = useState(null);
+  const [dragOverRoomKey, setDragOverRoomKey] = useState(null);
+
   // ── Sections ─────────────────────────────────────────────────
   const [sections, setSections] = useState(() => {
     const rawCd = data.ceiling_data || {};
@@ -3128,6 +3132,34 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
   const addItem        = (rk)         => setRooms(p=>({...p,[rk]:{...p[rk],items:[...p[rk].items,{name:'New Item',width:0,height:0,nos:1,type:'BOX',unitCost:1300,remarks:''}]}}));
   const removeItem     = (rk,idx)     => setRooms(p=>({...p,[rk]:{...p[rk],items:p[rk].items.filter((_,i)=>i!==idx)}}));
   const updateRoomLabel= (rk,label)   => setRooms(p=>({...p,[rk]:{...p[rk],label}}));
+
+  // Reorder rooms: move `fromKey` to `toKey`'s position (rebuilds the object in new key order).
+  const reorderRooms = (fromKey, toKey) => {
+    if (!fromKey || !toKey || fromKey === toKey) return;
+    setRooms(prev => {
+      const keys = Object.keys(prev);
+      const from = keys.indexOf(fromKey);
+      const to = keys.indexOf(toKey);
+      if (from === -1 || to === -1) return prev;
+      keys.splice(to, 0, keys.splice(from, 1)[0]);
+      const next = {};
+      keys.forEach(k => { next[k] = prev[k]; });
+      return next;
+    });
+  };
+  // Nudge a room one slot left/right — arrow-button fallback for touch devices.
+  const moveRoom = (roomKey, dir) => {
+    setRooms(prev => {
+      const keys = Object.keys(prev);
+      const i = keys.indexOf(roomKey);
+      const j = i + dir;
+      if (i === -1 || j < 0 || j >= keys.length) return prev;
+      [keys[i], keys[j]] = [keys[j], keys[i]];
+      const next = {};
+      keys.forEach(k => { next[k] = prev[k]; });
+      return next;
+    });
+  };
   const updateSec      = (sk,idx,f,v) => setSections(p=>({...p,[sk]:{...p[sk],items:p[sk].items.map((it,i)=>i===idx?{...it,[f]:v}:it)}}));
   const addSecRow      = (sk)         => setSections(p=>({...p,[sk]:{...p[sk],items:[...p[sk].items,newTableRow()]}}));
   const removeSecRow   = (sk,idx)     => setSections(p=>({...p,[sk]:{...p[sk],items:p[sk].items.filter((_,i)=>i!==idx)}}));
@@ -3419,14 +3451,39 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
               <div className="nav-overview-group">
                 <div className="nav-overview-group-title">🏠 Rooms</div>
                 <div className="nav-overview-grid">
-                  {Object.entries(rooms).map(([key,room])=>{
+                  {Object.entries(rooms).map(([key,room], idx, arr)=>{
                     const t=room.items.reduce((s,it)=>s+(key==='accessories'?it.nos*it.unitCost:calcItemTotal(it)),0);
+                    const isDragging = dragRoomKey === key;
+                    const isDropTarget = dragOverRoomKey === key && dragRoomKey && dragRoomKey !== key;
                     return (
-                      <a key={key} href={"#edit-card-"+key} className="nav-overview-item" style={{'--chip-color':room.color}}>
-                        <span className="nav-ov-icon">{ROOM_ICONS[key]||'🚪'}</span>
-                        <span className="nav-ov-name">{room.label}</span>
-                        <span className="nav-ov-amt">{t===0?'—':'₹'+t.toLocaleString('en-IN')}</span>
-                      </a>
+                      <div key={key}
+                        className={`nav-overview-item${isDragging ? ' dragging' : ''}${isDropTarget ? ' drag-over' : ''}`}
+                        style={{'--chip-color':room.color}}
+                        draggable
+                        onDragStart={e => { setDragRoomKey(key); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', key); } catch (_) {} }}
+                        onDragEnter={e => { e.preventDefault(); }}
+                        onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (dragOverRoomKey !== key) setDragOverRoomKey(key); }}
+                        onDragLeave={() => { if (dragOverRoomKey === key) setDragOverRoomKey(null); }}
+                        onDrop={e => { e.preventDefault(); const from = e.dataTransfer.getData('text/plain') || dragRoomKey; reorderRooms(from, key); setDragRoomKey(null); setDragOverRoomKey(null); }}
+                        onDragEnd={() => { setDragRoomKey(null); setDragOverRoomKey(null); }}
+                        title="Drag to reorder — or use the ‹ › buttons">
+                        <span className="nav-ov-grip" aria-hidden="true">⠿</span>
+                        <a href={"#edit-card-"+key} className="nav-ov-link" draggable={false}>
+                          <span className="nav-ov-icon">{ROOM_ICONS[key]||'🚪'}</span>
+                          <span className="nav-ov-name">{room.label}</span>
+                          <span className="nav-ov-amt">{t===0?'—':'₹'+t.toLocaleString('en-IN')}</span>
+                        </a>
+                        <span className="nav-ov-move">
+                          <span role="button" tabIndex={0} aria-label="Move left"
+                            className={`nav-ov-move-btn${idx === 0 ? ' disabled' : ''}`}
+                            onClick={e => { e.preventDefault(); e.stopPropagation(); if (idx > 0) moveRoom(key, -1); }}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); if (idx > 0) moveRoom(key, -1); } }}>‹</span>
+                          <span role="button" tabIndex={0} aria-label="Move right"
+                            className={`nav-ov-move-btn${idx === arr.length - 1 ? ' disabled' : ''}`}
+                            onClick={e => { e.preventDefault(); e.stopPropagation(); if (idx < arr.length - 1) moveRoom(key, 1); }}
+                            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); if (idx < arr.length - 1) moveRoom(key, 1); } }}>›</span>
+                        </span>
+                      </div>
                     );
                   })}
                 </div>
@@ -4307,26 +4364,23 @@ export default function QuotationList({ user = { role: 'admin' } }) {
         <div className="empty-state"><div className="empty-icon">📋</div><h3>No quotations found</h3><p>{search?'Try a different search':'Create your first quotation using the button above'}</p></div>
       ) : (
         <div className="table-card">
-          <table className="list-table">
-            <colgroup><col className="col-id"/><col className="col-name"/><col className="col-loc"/><col className="col-mobile"/>{isAdmin&&<col className="col-manager"/>}{isAdmin&&<col style={{minWidth:90}}/>}<col className="col-total"/><col className="col-paid"/><col className="col-balance"/><col className="col-status"/><col className="col-date"/><col className="col-actions" style={{width:110}}/></colgroup>
-            <thead><tr><th className="col-id">QID</th><th className="col-name">Customer</th><th className="col-loc">Location</th><th className="col-mobile">Mobile</th>{isAdmin&&<th className="col-manager">Manager</th>}{isAdmin&&<th style={{fontSize:11,minWidth:90}}>Branch</th>}<th className="col-total">Grand Total</th><th className="col-paid">Paid</th><th className="col-balance">Balance</th><th className="col-status">Status</th><th className="col-date" style={{whiteSpace:'nowrap'}}>Date / Project</th><th className="col-actions">Actions</th></tr></thead>
-            <tbody>
-              {filtered.map((q,idx)=>(
-                <tr key={q.id} className="list-row" style={{animationDelay:`${idx*0.04}s`}}>
-                  <td className="id-cell col-id" style={{fontWeight:700,color:'#E8471C'}}>#{q.quotation_id||q.id}</td>
-                  <td className="name-cell col-name"><div className="name-inner"><div className="name-avatar">{(q.customer_name||'?').charAt(0).toUpperCase()}</div><div style={{display:'flex',flexDirection:'column',minWidth:0}}><span>{q.customer_name||'—'}</span>{q.site_name&&<span style={{fontSize:11,color:'#E8471C',fontWeight:600,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>🏗️ {q.site_name}</span>}</div></div></td>
-                  <td className="loc-cell col-loc"><span className="loc-text">{q.location||'—'}</span></td>
-                  <td className="phone-cell col-mobile">{q.mobile}</td>
-                  {isAdmin&&<td className="col-manager" style={{fontSize:12,color:'#555',fontWeight:600}}>{q.site_manager_name||'—'}</td>}
-                  {isAdmin&&<td style={{fontSize:11,color:'#1D4ED8',fontWeight:600,whiteSpace:'nowrap'}}>{q.site_manager_branch?<span style={{background:'#EFF6FF',padding:'2px 8px',borderRadius:12,fontSize:10}}>{q.site_manager_branch}</span>:'—'}</td>}
-                  <td className="total-cell col-total">₹{Number(q.grand_total).toLocaleString('en-IN')}</td>
-                  <td className="paid-cell col-paid" style={{color:'#10B981',fontWeight:700}}>
-                    {Number(q.paid_total||0) > 0 ? '₹'+Number(q.paid_total).toLocaleString('en-IN') : '—'}
-                  </td>
-                  <td className="col-balance" style={{fontWeight:700,color:Number(q.grand_total)-Number(q.paid_total||0)>0?'#EF4444':'#10B981'}}>
-                    {Number(q.grand_total)>0 ? '₹'+(Number(q.grand_total)-Number(q.paid_total||0)).toLocaleString('en-IN') : '—'}
-                  </td>
-                  <td className="status-cell col-status">
+          <div className="q-cards">
+            {filtered.map((q,idx)=>{
+              const balance = Number(q.grand_total) - Number(q.paid_total||0);
+              return (
+              <div key={q.id} className="q-card" style={{animationDelay:`${idx*0.04}s`}}>
+
+                {/* Header: avatar + name + site + QID  |  status */}
+                <div className="qc-head">
+                  <div className="qc-head-left">
+                    <div className="qc-avatar">{(q.customer_name||'?').charAt(0).toUpperCase()}</div>
+                    <div className="qc-titles">
+                      <span className="qc-name">{q.customer_name||'—'}</span>
+                      {q.site_name&&<span className="qc-site">🏗️ {q.site_name}</span>}
+                      <span className="qc-id">QID #{q.quotation_id||q.id}</span>
+                    </div>
+                  </div>
+                  <div className="qc-status">
                     {!isAdmin && (q.project_status||'Unbooked') === 'Booked' ? (
                       <div style={{
                         display:'inline-flex', alignItems:'center', gap:5,
@@ -4346,52 +4400,74 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                         <option value="Unbooked">🔘 Unbooked</option>
                       </select>
                     )}
-                  </td>
-                  <td className="date-cell col-date">
-                    <div style={{fontSize:11,color:'#888',marginBottom:3}}>
-                      📅 {new Date(q.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}
-                    </div>
-                    <div style={{display:'flex',flexDirection:'column',gap:2}}>
-                      {q.project_start_date
-                        ? <span style={{fontSize:11,color:'#15803d',fontWeight:700}}>▶ {new Date(q.project_start_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</span>
-                        : <span style={{fontSize:10,color:'#ccc'}}>Start: —</span>
-                      }
-                      {q.project_end_date
-                        ? <span style={{fontSize:11,color:'#E8471C',fontWeight:700}}>⏹ {new Date(q.project_end_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</span>
-                        : <span style={{fontSize:10,color:'#ccc'}}>End: —</span>
-                      }
-                      {Number(q.total_sft) > 0 && (
-                        <span style={{fontSize:10,fontWeight:700,color:'#7C3AED',marginTop:1}}>
-                          📐 {Number(q.total_sft).toLocaleString('en-IN')} SFT
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="actions-cell col-actions">
-                    <ActionDropdown
-                      q={q}
-                      canEdit={canEdit}
-                      isManager={isManager}
-                      isAdmin={isAdmin}
-                      canDelete={canDelete}
-                      approvedEdits={approvedEdits}
-                      onView={()=>handleView(q.id)}
-                      onEdit={()=>handleEdit(q.id)}
-                      onRequestEdit={()=>setEditRequestModal(q)}
-                      onPayment={()=>handlePayment(q.id)}
-                      onDownload={()=>handleDownload(q.id)}
-                      onPrint={()=>handlePrint(q.id)}
-                      onDelete={()=>handleDelete(q.id)}
-                      onProjectMgmt={(isManager||isAdmin) && q.project_status==='Booked' ? ()=>{ setPmProjectId(q.id); setShowProjectMgmt(true); } : null}
-                      onVisitReport={()=>setVisitReportQ(q)}
-                      onCompletion={()=>setCompletionQ(q)}
-                    />
-                  </td>
+                  </div>
+                </div>
 
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                {/* Info grid: location, mobile, manager, branch */}
+                <div className="qc-info">
+                  <div className="qc-field"><span className="qc-label">Location</span><span className="qc-value">📍 {q.location||'—'}</span></div>
+                  <div className="qc-field"><span className="qc-label">Mobile</span><span className="qc-value qc-mono">{q.mobile||'—'}</span></div>
+                  {isAdmin&&<div className="qc-field"><span className="qc-label">Manager</span><span className="qc-value">{q.site_manager_name||'—'}</span></div>}
+                  {isAdmin&&<div className="qc-field"><span className="qc-label">Branch</span><span className="qc-value">{q.site_manager_branch?<span className="qc-branch">{q.site_manager_branch}</span>:'—'}</span></div>}
+                </div>
+
+                {/* Money strip: grand total / paid / balance */}
+                <div className="qc-money">
+                  <div className="qc-money-item">
+                    <span className="qc-label">Grand Total</span>
+                    <span className="qc-amount qc-total">₹{Number(q.grand_total).toLocaleString('en-IN')}</span>
+                  </div>
+                  <div className="qc-money-item">
+                    <span className="qc-label">Paid</span>
+                    <span className="qc-amount qc-paid">{Number(q.paid_total||0) > 0 ? '₹'+Number(q.paid_total).toLocaleString('en-IN') : '—'}</span>
+                  </div>
+                  <div className="qc-money-item">
+                    <span className="qc-label">Balance</span>
+                    <span className="qc-amount" style={{color:balance>0?'#EF4444':'#10B981'}}>{Number(q.grand_total)>0 ? '₹'+balance.toLocaleString('en-IN') : '—'}</span>
+                  </div>
+                </div>
+
+                {/* Dates / project */}
+                <div className="qc-dates">
+                  <span className="qc-date-created">📅 {new Date(q.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</span>
+                  {q.project_start_date
+                    ? <span style={{fontSize:11,color:'#15803d',fontWeight:700}}>▶ {new Date(q.project_start_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</span>
+                    : <span style={{fontSize:10,color:'#ccc'}}>Start: —</span>
+                  }
+                  {q.project_end_date
+                    ? <span style={{fontSize:11,color:'#E8471C',fontWeight:700}}>⏹ {new Date(q.project_end_date).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</span>
+                    : <span style={{fontSize:10,color:'#ccc'}}>End: —</span>
+                  }
+                  {Number(q.total_sft) > 0 && (
+                    <span style={{fontSize:10,fontWeight:700,color:'#7C3AED'}}>📐 {Number(q.total_sft).toLocaleString('en-IN')} SFT</span>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="qc-actions">
+                  <ActionDropdown
+                    q={q}
+                    canEdit={canEdit}
+                    isManager={isManager}
+                    isAdmin={isAdmin}
+                    canDelete={canDelete}
+                    approvedEdits={approvedEdits}
+                    onView={()=>handleView(q.id)}
+                    onEdit={()=>handleEdit(q.id)}
+                    onRequestEdit={()=>setEditRequestModal(q)}
+                    onPayment={()=>handlePayment(q.id)}
+                    onDownload={()=>handleDownload(q.id)}
+                    onPrint={()=>handlePrint(q.id)}
+                    onDelete={()=>handleDelete(q.id)}
+                    onProjectMgmt={(isManager||isAdmin) && q.project_status==='Booked' ? ()=>{ setPmProjectId(q.id); setShowProjectMgmt(true); } : null}
+                    onVisitReport={()=>setVisitReportQ(q)}
+                    onCompletion={()=>setCompletionQ(q)}
+                  />
+                </div>
+
+              </div>
+            );})}
+          </div>
           <div className="mobile-cards">
             {filtered.map((q,idx)=>(
               <div key={q.id} className="mobile-card" style={{animationDelay:`${idx*0.04}s`}}>

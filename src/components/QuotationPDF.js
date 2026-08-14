@@ -116,6 +116,20 @@ const s = StyleSheet.create({
 const fmt = (n) => `Rs. ${Number(n || 0).toLocaleString('en-IN')}`;
 const dateStr = (d) => new Date(d || Date.now()).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' });
 
+// Whether a single table row actually has values entered by the user.
+// Default/placeholder rows (named but all-zero) count as empty, so untouched
+// rooms & sections don't print. A row counts as filled if any measurement,
+// quantity, rate, or computed total is greater than zero.
+const rowHasValue = (it, isAccessory) => {
+  if (!it) return false;
+  const n = v => Number(v) || 0;
+  if (isAccessory) return n(it.nos) > 0 || n(it.unitCost) > 0;
+  return n(it.width) > 0 || n(it.height) > 0 || n(it.nos) > 0 || n(it.unitCost) > 0 || calcTotal(it) > 0;
+};
+// Whether a room/section has at least one filled row.
+const sectionHasValues = (items, isAccessory) =>
+  Array.isArray(items) && items.some(it => rowHasValue(it, isAccessory));
+
 const DEFAULT_NOTES = [
   'Sylvan 30 years for Kitchen and 21 years BWP 710 for other areas will be Provided.',
   'Hardware Hinges "Hettich Brand" Total House Soft closing will be Provided.',
@@ -251,10 +265,22 @@ export function QuotationPDF({ data }) {
 
   const totalInterior = Number(data.total_interior || 0);
   const totalCeiling  = Number(data.total_ceiling  || 0);
-  const subtotal      = totalInterior + totalCeiling;
+
+  // Does the ceiling / other-works actually have any values entered?
+  // If not, a stored ceiling amount is treated as phantom and dropped from
+  // the subtotal and grand total, so the totals match the printed line items.
+  const ceilingHasValues = isNewFormat
+    ? Object.values(sections || {}).some(sec => sec && sectionHasValues(sec.items, false))
+    : (Number(cd.plainArea) > 0 || Number(cd.plainRate) > 0 ||
+       Number(cd.stripLength) > 0 || Number(cd.stripRate) > 0 ||
+       Number(cd.electricalLabour) > 0);
+  const effectiveCeiling = ceilingHasValues ? totalCeiling : 0;
+  const phantomCeiling   = totalCeiling - effectiveCeiling;
+
+  const subtotal      = totalInterior + effectiveCeiling;
   const gstPercent    = Number(data.gst_percent || 0);
   const gstAmount     = Number(data.gst_amount  || 0);
-  const grandTotal    = Number(data.grand_total  || 0);
+  const grandTotal    = Number(data.grand_total  || 0) - phantomCeiling;
 
   let tcItems = data.tc_items;
   if (typeof tcItems === 'string' && tcItems) { try { tcItems = JSON.parse(tcItems); } catch { tcItems = null; } }
@@ -331,9 +357,10 @@ export function QuotationPDF({ data }) {
           </View>
         </View>
 
-        {/* Interior Rooms */}
-        {roomEntries.map(([key, room], i) =>
-          room ? (
+        {/* Interior Rooms — only rooms that actually have values entered */}
+        {roomEntries
+          .filter(([key, room]) => room && sectionHasValues(room.items, key === 'accessories'))
+          .map(([key, room], i) => (
             <ItemTableSection
               key={key}
               label={room.label || key}
@@ -341,8 +368,8 @@ export function QuotationPDF({ data }) {
               sno={i + 1}
               isAccessory={key === 'accessories'}
             />
-          ) : null
-        )}
+          ))
+        }
 
         {/* Interior subtotal banner */}
         <View style={s.totalInteriorRow}>
@@ -354,7 +381,8 @@ export function QuotationPDF({ data }) {
         {isNewFormat ? (
           Object.entries(sections).map(([secKey, secData]) => {
             const meta = SECTION_META[secKey];
-            if (!secData || !secData.items || secData.items.length === 0) return null;
+            // Only print sections that actually have values entered
+            if (!secData || !sectionHasValues(secData.items, false)) return null;
             return (
               <ItemTableSection
                 key={secKey}
@@ -366,7 +394,10 @@ export function QuotationPDF({ data }) {
             );
           })
         ) : (
-          /* Legacy ceiling */
+          /* Legacy ceiling — only when the user actually entered ceiling values */
+          (Number(cd.plainArea) > 0 || Number(cd.plainRate) > 0 ||
+           Number(cd.stripLength) > 0 || Number(cd.stripRate) > 0 ||
+           Number(cd.electricalLabour) > 0) ? (
           <>
             <View style={[s.sectionRow, { marginTop: 10 }]}>
               <Text style={s.sectionLabel}>Ceiling work Estimation</Text>
@@ -380,6 +411,7 @@ export function QuotationPDF({ data }) {
                 <Text style={[s.th, { width: '16%', textAlign: 'right' }]}>AMOUNT (Rs.)</Text>
                 <Text style={[s.th, { width: '20%', paddingLeft: 4 }]}>REMARKS</Text>
               </View>
+              {(Number(cd.plainArea) > 0 || Number(cd.plainRate) > 0) && (
               <View style={s.tableRow}>
                 <Text style={[s.td, { flex: 2 }]}>Plain Area</Text>
                 <Text style={[s.td, { width: '12%', textAlign: 'center' }]}>{cd.plainArea} sft</Text>
@@ -387,6 +419,8 @@ export function QuotationPDF({ data }) {
                 <Text style={[s.tdBrand, { width: '16%', textAlign: 'right' }]}>{plainTotal.toLocaleString('en-IN')}</Text>
                 <Text style={[s.td, { width: '20%', paddingLeft: 4 }]}>Incl. 2 cot Putti & Painting</Text>
               </View>
+              )}
+              {(Number(cd.stripLength) > 0 || Number(cd.stripRate) > 0) && (
               <View style={[s.tableRow, s.tableRowAlt]}>
                 <Text style={[s.td, { flex: 2 }]}>Strip Light Cutting</Text>
                 <Text style={[s.td, { width: '12%', textAlign: 'center' }]}>{cd.stripLength} ft</Text>
@@ -394,6 +428,8 @@ export function QuotationPDF({ data }) {
                 <Text style={[s.tdBrand, { width: '16%', textAlign: 'right' }]}>{stripTotal.toLocaleString('en-IN')}</Text>
                 <Text style={[s.td, { width: '20%', paddingLeft: 4 }]}></Text>
               </View>
+              )}
+              {Number(cd.electricalLabour) > 0 && (
               <View style={s.tableRow}>
                 <Text style={[s.td, { flex: 2 }]}>Electrical Labour Charges</Text>
                 <Text style={[s.td, { width: '12%', textAlign: 'center' }]}>—</Text>
@@ -401,8 +437,10 @@ export function QuotationPDF({ data }) {
                 <Text style={[s.tdBrand, { width: '16%', textAlign: 'right' }]}>{(cd.electricalLabour || 0).toLocaleString('en-IN')}</Text>
                 <Text style={[s.td, { width: '20%', paddingLeft: 4 }]}></Text>
               </View>
+              )}
             </View>
           </>
+          ) : null
         )}
 
         {/* Subtotal / GST / Grand Total */}
