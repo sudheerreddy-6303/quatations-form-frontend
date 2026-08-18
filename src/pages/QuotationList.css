@@ -665,6 +665,7 @@
 /* ─── STATUS FILTER ROW ─────────────────────────────────────── */
 .dash-filter-row {
   display: flex;
+  align-items: center;
   gap: 10px;
   margin-bottom: 18px;
   flex-wrap: wrap;

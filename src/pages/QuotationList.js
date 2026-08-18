@@ -167,22 +167,23 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
       const rect = btnRef.current.getBoundingClientRect();
       const menuW = 185;
       const menuH = 320;
-      const isMobile = window.innerWidth <= 768;
+      const vw  = window.innerWidth;
+      const vh  = window.innerHeight;
+      const gap = 8;
 
-      // Vertical: flip up if not enough space below
-      const top = rect.bottom + menuH > window.innerHeight
-        ? Math.max(8, rect.top - menuH - 4)
+      // Vertical: flip up if not enough space below the button
+      const top = rect.bottom + menuH > vh
+        ? Math.max(gap, rect.top - menuH - 4)
         : rect.bottom + 4;
 
-      if (isMobile) {
-        // On mobile: center on screen horizontally, or left-align
-        const left = Math.max(8, Math.min(rect.left, window.innerWidth - menuW - 8));
-        setPos({ top, left, right: null });
-      } else {
-        // Desktop: right-align with button
-        const right = window.innerWidth - rect.right;
-        setPos({ top, right, left: null });
-      }
+      // Horizontal: open the menu leftward from the button (right edges aligned),
+      // then clamp it so it can never run off either edge of the screen. This is
+      // what stops the menu from sliding under the left sidebar / off the left edge.
+      let left = rect.right - menuW;
+      if (left < gap) left = rect.left;                       // fall back to left-aligning with the button
+      left = Math.max(gap, Math.min(left, vw - menuW - gap)); // keep the whole menu inside the viewport
+
+      setPos({ top, left, right: null });
     }
     setOpen(o => !o);
   };
@@ -3943,7 +3944,21 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   const allBranches  = [...new Set(quotations.map(q=>q.site_manager_branch||'').filter(Boolean))].sort();
   const allManagers  = [...new Set(quotations.map(q=>q.site_manager_name||'').filter(Boolean))].sort();
 
-  const filtered = [...quotations].sort((a,b) => {
+  // A project counts as "Completed" only when BOTH bars are full:
+  // payment progress (paid ≥ grand total) AND project completion (%) = 100.
+  // Completion % comes from the _cc cache filled by the bulk fetch above.
+  const isCompleted = (q) => {
+    const total = Number(q.grand_total||0);
+    const paid  = Number(q.paid_total||0);
+    const paymentDone    = total > 0 && paid >= total;
+    const comp           = typeof _cc[q.id] === 'number' ? _cc[q.id] : 0;
+    const completionDone = comp >= 100;
+    return paymentDone && completionDone;
+  };
+
+  // Everything filtered EXCEPT the status tab. Tab counts are derived from this
+  // so that selecting one tab never changes the other tabs' numbers.
+  const preStatus = [...quotations].sort((a,b) => {
     // Booked first, then Unbooked
     const aBooked = (a.project_status||'Unbooked') === 'Booked' ? 0 : 1;
     const bBooked = (b.project_status||'Unbooked') === 'Booked' ? 0 : 1;
@@ -3955,7 +3970,6 @@ export default function QuotationList({ user = { role: 'admin' } }) {
       (q.customer_name||'').toLowerCase().includes(search.toLowerCase())||
       (q.location||'').toLowerCase().includes(search.toLowerCase())||
       (q.mobile||'').includes(search);
-    const matchStatus  = statusFilter === 'All' || (q.project_status||'Unbooked') === statusFilter;
     const matchBranch  = filterBranch  === 'All' || (q.site_manager_branch||'') === filterBranch;
     const matchManager = filterManager === 'All' || (q.site_manager_name||'')   === filterManager;
     const createdDate  = new Date(q.created_at);
@@ -3964,8 +3978,22 @@ export default function QuotationList({ user = { role: 'admin' } }) {
     const gt           = Number(q.grand_total||0);
     const matchBudgMin = !filterBudgetMin || gt >= Number(filterBudgetMin);
     const matchBudgMax = !filterBudgetMax || gt <= Number(filterBudgetMax);
-    return matchSearch && matchStatus && matchBranch && matchManager && matchFrom && matchTo && matchBudgMin && matchBudgMax;
+    return matchSearch && matchBranch && matchManager && matchFrom && matchTo && matchBudgMin && matchBudgMax;
   });
+
+  // Status-tab counts — each is the true total for that status, independent of
+  // which tab is currently active.
+  const countAll       = preStatus.length;
+  const countBooked    = preStatus.filter(q=>(q.project_status||'Unbooked')==='Booked').length;
+  const countUnbooked  = preStatus.filter(q=>(q.project_status||'Unbooked')==='Unbooked').length;
+  const countCompleted = preStatus.filter(isCompleted).length;
+
+  // Final visible list applies the selected status tab on top of preStatus.
+  const filtered = preStatus.filter(q =>
+    statusFilter === 'All'       ? true :
+    statusFilter === 'Completed' ? isCompleted(q) :
+    (q.project_status||'Unbooked') === statusFilter
+  );
 
   // Cards computed from filtered — all roles see all quotations
   const cardBase = filtered;
@@ -4073,10 +4101,6 @@ export default function QuotationList({ user = { role: 'admin' } }) {
       <div className="list-header">
         <div><h1 className="page-title">Dashboard</h1><p className="page-subtitle">{hasFilters ? `${filtered.length} of ${quotations.length} records` : `${quotations.length} total records`}</p></div>
         <div style={{display:'flex',alignItems:'center',gap:'14px',flexWrap:'wrap'}}>
-          <div className="list-search-wrap">
-            <svg className="search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="6" cy="6" r="4" stroke="#888" strokeWidth="1.3"/><path d="M9.5 9.5L12 12" stroke="#888" strokeWidth="1.3" strokeLinecap="round"/></svg>
-            <input className="list-search" placeholder="Search by name, location or mobile…" value={search} onChange={e=>setSearch(e.target.value)}/>
-          </div>
           {canCreate && (
             <button onClick={()=>navigate('/new')}
               style={{display:'flex',alignItems:'center',gap:'7px',padding:'11px 20px',background:'#E8471C',color:'#fff',border:'none',borderRadius:'10px',fontFamily:"'DM Sans',sans-serif",fontSize:'14px',fontWeight:'700',cursor:'pointer',whiteSpace:'nowrap',boxShadow:'0 4px 14px rgba(232,71,28,0.35)',transition:'all 0.2s',flexShrink:0}}
@@ -4220,143 +4244,23 @@ export default function QuotationList({ user = { role: 'admin' } }) {
 
       {/* ── Status Filter ── */}
       <div className="dash-filter-row">
-        {['All','Booked','Unbooked'].map(s => (
+        {['All','Booked','Unbooked','Completed'].map(s => (
           <button key={s} className={`dash-filter-btn ${statusFilter===s?'active':''}`}
             onClick={()=>setStatusFilter(s)}>
-            {s === 'All' ? '🗂 All' : s === 'Booked' ? '✅ Booked' : '🔘 Unbooked'}
+            {s === 'All' ? '🗂 All' : s === 'Booked' ? '✅ Booked' : s === 'Unbooked' ? '🔘 Unbooked' : '🏆 Completed'}
             <span className="dash-filter-count">
-              {s==='All' ? filtered.length : filtered.filter(q=>(q.project_status||'Unbooked')===s).length}
+              {s==='All' ? countAll
+                : s==='Booked' ? countBooked
+                : s==='Unbooked' ? countUnbooked
+                : countCompleted}
             </span>
           </button>
         ))}
-      </div>
-
-      {/* ── Booked Projects quick panel ── */}
-      {(isManager || isAdmin) && !loading && bookedQ.length > 0 && (
-        <div style={{marginBottom:20,background:'linear-gradient(135deg,#fff8f5,#fff)',
-          border:'2px solid rgba(232,71,28,0.2)',borderRadius:14,overflow:'hidden',
-          boxShadow:'0 2px 12px rgba(232,71,28,0.08)'}}>
-          <div style={{padding:'14px 20px',background:'linear-gradient(135deg,#1A1A1A,#2d1200)',
-            display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-            <div style={{display:'flex',alignItems:'center',gap:10}}>
-              <span style={{fontSize:18}}>🏗️</span>
-              <div>
-                <div style={{fontWeight:800,fontSize:15,color:'#fff',fontFamily:"'DM Sans',sans-serif"}}>
-                  {isAdmin ? '📊 All Active Projects' : '🏗️ My Active Projects'}
-                </div>
-                <div style={{fontSize:11,color:'#aaa',marginTop:1}}>
-                  {bookedQ.length} booked project{bookedQ.length!==1?'s':''} — click to manage
-                </div>
-              </div>
-            </div>
-            <button onClick={() => { setPmProjectId(null); setShowProjectMgmt(true); }}
-              style={{padding:'8px 16px',background:'#E8471C',color:'#fff',border:'none',
-                borderRadius:8,fontWeight:700,fontSize:13,cursor:'pointer',
-                fontFamily:"'DM Sans',sans-serif"}}>
-              📋 Open Project Management
-            </button>
-          </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,padding:'16px'}}>
-            {bookedQ.map((q, idx) => {
-              const paid    = Number(q.paid_total||0);
-              const total   = Number(q.grand_total||0);
-              const balance = total - paid;
-              const paidPct = total > 0 ? Math.round((paid/total)*100) : 0;
-              return (
-                <div key={q.id}
-                  onClick={() => { setPmProjectId(q.id); setShowProjectMgmt(true); }}
-                  style={{
-                    padding:'22px 24px',
-                    borderRadius:14,
-                    border:'1.5px solid #f0ece8',
-                    cursor:'pointer',
-                    transition:'box-shadow 0.18s, transform 0.18s, background 0.15s',
-                    background:'#fff',
-                    boxShadow:'0 2px 10px rgba(0,0,0,0.06)',
-                    display:'flex', flexDirection:'column', gap:0,
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.background='#fff8f5'; e.currentTarget.style.boxShadow='0 6px 24px rgba(232,71,28,0.13)'; e.currentTarget.style.transform='translateY(-2px)'; }}
-                  onMouseLeave={e => { e.currentTarget.style.background='#fff'; e.currentTarget.style.boxShadow='0 2px 10px rgba(0,0,0,0.06)'; e.currentTarget.style.transform='translateY(0)'; }}>
-
-                  {/* Header: client name + BOOKED badge */}
-                  <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:4}}>
-                    <div style={{fontWeight:800,fontSize:18,color:'#E8471C',
-                      fontFamily:"'DM Sans',sans-serif",lineHeight:1.2,
-                      flex:1,minWidth:0,paddingRight:8,
-                      wordBreak:'break-word'}}>
-                      {q.customer_name}
-                    </div>
-                    <span style={{background:'rgba(232,71,28,0.1)',color:'#E8471C',
-                      padding:'3px 10px',borderRadius:6,fontSize:10,fontWeight:800,
-                      flexShrink:0,letterSpacing:0.5}}>
-                      BOOKED
-                    </span>
-                  </div>
-
-                  {/* QID + Site name */}
-                  <div style={{fontSize:12,color:'#555',fontWeight:700,marginBottom:2}}>
-                    #{q.quotation_id||q.id} · {q.site_name || q.location || '—'}
-                  </div>
-
-                  {/* Location */}
-                  {q.location && (
-                    <div style={{fontSize:11,color:'#999',marginBottom:8}}>{q.location}</div>
-                  )}
-
-                  {/* Site Manager */}
-                  {q.site_manager_name && (
-                    <div style={{fontSize:11,color:'#7C3AED',fontWeight:700,marginBottom:10,
-                      display:'flex',alignItems:'center',gap:5}}>
-                      <span style={{fontSize:13}}>👷</span>
-                      <span>{q.site_manager_name}{q.site_manager_branch ? ` · ${q.site_manager_branch}` : ''}</span>
-                    </div>
-                  )}
-
-                  {/* Payment progress */}
-                  <div style={{marginBottom:8}}>
-                    <div style={{display:'flex',justifyContent:'space-between',fontSize:11,
-                      color:'#888',marginBottom:4}}>
-                      <span style={{fontWeight:600}}>Payment Progress</span>
-                      <span style={{fontWeight:800,color:paidPct===100?'#10B981':'#E8471C',fontSize:12}}>{paidPct}%</span>
-                    </div>
-                    <div style={{height:7,background:'#f0f0f0',borderRadius:99,overflow:'hidden'}}>
-                      <div style={{height:'100%',width:paidPct+'%',
-                        background:paidPct===100?'#10B981':'#E8471C',
-                        borderRadius:99,transition:'width 0.5s'}}/>
-                    </div>
-                  </div>
-
-                  {/* Project completion */}
-                  <div style={{marginBottom:12}}>
-                    <div style={{fontSize:11,color:'#888',fontWeight:600,marginBottom:4}}>Project Completion</div>
-                    <CompletionBar key={q.id+'-'+ccReady} quotationId={q.id} />
-                  </div>
-
-                  {/* Divider */}
-                  <div style={{height:1,background:'#f5f0ec',marginBottom:10}}/>
-
-                  {/* Amounts */}
-                  <div style={{display:'flex',flexDirection:'column',gap:4}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                      <span style={{fontSize:11,color:'#999'}}>Total</span>
-                      <span style={{fontWeight:800,fontSize:13,color:'#1a1a1a'}}>₹{Number(total).toLocaleString('en-IN')}</span>
-                    </div>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                      <span style={{fontSize:11,color:'#999'}}>Paid</span>
-                      <span style={{fontWeight:700,fontSize:12,color:'#10B981'}}>₹{Number(paid).toLocaleString('en-IN')}</span>
-                    </div>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                      <span style={{fontSize:11,color:'#999'}}>Due</span>
-                      <span style={{fontWeight:700,fontSize:12,color:balance>0?'#E8471C':'#10B981'}}>₹{Number(balance).toLocaleString('en-IN')}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
+        <div className="list-search-wrap" style={{marginLeft:'auto'}}>
+          <svg className="search-icon" width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="6" cy="6" r="4" stroke="#888" strokeWidth="1.3"/><path d="M9.5 9.5L12 12" stroke="#888" strokeWidth="1.3" strokeLinecap="round"/></svg>
+          <input className="list-search" placeholder="Search by name, location or mobile…" value={search} onChange={e=>setSearch(e.target.value)}/>
         </div>
-      )}
+      </div>
 
       {loading ? (
         <div className="loading-state"><div className="loading-spinner"/><p>Loading quotations…</p></div>
@@ -4381,7 +4285,17 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                     </div>
                   </div>
                   <div className="qc-status">
-                    {!isAdmin && (q.project_status||'Unbooked') === 'Booked' ? (
+                    {isCompleted(q) ? (
+                      <div style={{
+                        display:'inline-flex', alignItems:'center', gap:5,
+                        padding:'5px 12px', borderRadius:20,
+                        background:'#ECFDF5', border:'1.5px solid #6EE7B7',
+                        color:'#047857', fontWeight:700, fontSize:12,
+                        userSelect:'none',
+                      }} title="Payment and project completion are both 100%">
+                        🏆 Completed
+                      </div>
+                    ) : !isAdmin && (q.project_status||'Unbooked') === 'Booked' ? (
                       <div style={{
                         display:'inline-flex', alignItems:'center', gap:5,
                         padding:'5px 12px', borderRadius:20,
@@ -4426,6 +4340,32 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                     <span className="qc-amount" style={{color:balance>0?'#EF4444':'#10B981'}}>{Number(q.grand_total)>0 ? '₹'+balance.toLocaleString('en-IN') : '—'}</span>
                   </div>
                 </div>
+
+                {/* Progress bars — shown only for Booked projects */}
+                {(q.project_status||'Unbooked') === 'Booked' && (() => {
+                  const _paid    = Number(q.paid_total||0);
+                  const _total   = Number(q.grand_total||0);
+                  const _paidPct = _total > 0 ? Math.round((_paid/_total)*100) : 0;
+                  return (
+                    <div className="qc-progress" style={{margin:'2px 0 4px'}}>
+                      {/* Payment progress */}
+                      <div style={{marginBottom:8}}>
+                        <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#888',marginBottom:4}}>
+                          <span style={{fontWeight:600}}>Payment Progress</span>
+                          <span style={{fontWeight:800,color:_paidPct>=100?'#10B981':'#E8471C',fontSize:12}}>{_paidPct}%</span>
+                        </div>
+                        <div style={{height:7,background:'#f0f0f0',borderRadius:99,overflow:'hidden'}}>
+                          <div style={{height:'100%',width:_paidPct+'%',background:_paidPct>=100?'#10B981':'#E8471C',borderRadius:99,transition:'width 0.5s'}}/>
+                        </div>
+                      </div>
+                      {/* Project completion */}
+                      <div>
+                        <div style={{fontSize:11,color:'#888',fontWeight:600,marginBottom:4}}>Project Completion</div>
+                        <CompletionBar key={q.id+'-card-'+ccReady} quotationId={q.id} />
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Dates / project */}
                 <div className="qc-dates">
@@ -4477,7 +4417,17 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                 </div></div>
                 <div className="mc-meta">
                   <div className="mc-meta-item">
-                    {!isAdmin && (q.project_status||'Unbooked') === 'Booked' ? (
+                    {isCompleted(q) ? (
+                      <div style={{
+                        display:'inline-flex', alignItems:'center', gap:4,
+                        padding:'4px 10px', borderRadius:20,
+                        background:'#ECFDF5', border:'1.5px solid #6EE7B7',
+                        color:'#047857', fontWeight:700, fontSize:11,
+                        userSelect:'none',
+                      }} title="Payment and project completion are both 100%">
+                        🏆 Completed
+                      </div>
+                    ) : !isAdmin && (q.project_status||'Unbooked') === 'Booked' ? (
                       <div style={{
                         display:'inline-flex', alignItems:'center', gap:4,
                         padding:'4px 10px', borderRadius:20,
@@ -4498,6 +4448,29 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                     )}
                   </div>
                   {q.location&&<div className="mc-meta-item">{q.location}</div>}<div className="mc-meta-item">{q.mobile}</div><div className="mc-meta-item">{new Date(q.created_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</div></div>
+                {/* Progress bars — shown only for Booked projects */}
+                {(q.project_status||'Unbooked') === 'Booked' && (() => {
+                  const _paid    = Number(q.paid_total||0);
+                  const _total   = Number(q.grand_total||0);
+                  const _paidPct = _total > 0 ? Math.round((_paid/_total)*100) : 0;
+                  return (
+                    <div className="mc-progress" style={{padding:'8px 2px 2px'}}>
+                      <div style={{marginBottom:8}}>
+                        <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'#888',marginBottom:4}}>
+                          <span style={{fontWeight:600}}>Payment Progress</span>
+                          <span style={{fontWeight:800,color:_paidPct>=100?'#10B981':'#E8471C',fontSize:12}}>{_paidPct}%</span>
+                        </div>
+                        <div style={{height:7,background:'#f0f0f0',borderRadius:99,overflow:'hidden'}}>
+                          <div style={{height:'100%',width:_paidPct+'%',background:_paidPct>=100?'#10B981':'#E8471C',borderRadius:99,transition:'width 0.5s'}}/>
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{fontSize:11,color:'#888',fontWeight:600,marginBottom:4}}>Project Completion</div>
+                        <CompletionBar key={q.id+'-mcard-'+ccReady} quotationId={q.id} />
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="mc-actions">
                   <ActionDropdown
                     q={q}
