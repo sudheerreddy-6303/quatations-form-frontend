@@ -146,7 +146,7 @@ function CompletionBar({ quotationId }) {
 }
 
 function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdits,
-  onView, onEdit, onRequestEdit, onPayment, onDownload, onPrint, onDelete, onProjectMgmt, onVisitReport, onCompletion }) {
+  onView, onEdit, onRequestEdit, onPayment, onDownload, onPrint, onDelete, onProjectMgmt, onVisitReport, onCompletion, onComplete, onFollowup, onLeadStatus }) {
   const [open, setOpen]   = React.useState(false);
   const [pos,  setPos]    = React.useState({ top:0, left:0 });
   const btnRef = React.useRef();
@@ -189,6 +189,7 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
   };
 
   const isBooked    = (q.project_status || 'Unbooked') === 'Booked';
+  const isLead      = (q.project_status || 'Unbooked') === 'Unbooked'; // Unbooked = lead pipeline
   const canEditQ    = canEdit(q);
   const showReqEdit = isManager && isBooked && !canEditQ;
 
@@ -257,16 +258,36 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
           }}
         >
           <style>{`@keyframes ddFadeIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}`}</style>
-          <Item icon="👁"  label="View"           color="#1D4ED8" onClick={onView} />
-          {canEditQ    && <Item icon="✏️" label="Edit"          color="#E8471C" onClick={onEdit} />}
-          {showReqEdit && <Item icon="🔓" label="Request Edit"  color="#B45309" onClick={onRequestEdit} />}
-          <Item icon="💳"  label="Record Payment"  color="#15803D" onClick={onPayment} />
-          {onProjectMgmt && <Item icon="📋" label="Project Mgmt"  color="#0369A1" onClick={onProjectMgmt} />}
-          <Item icon="📸" label="Visit Report"   color="#7C3AED" onClick={onVisitReport} />
-          <Item icon="📊" label="Completion %"   color="#15803D" onClick={onCompletion} />
-          <Item icon="⬇"   label="Download PDF"   color="#374151" onClick={onDownload} sep />
-          <Item icon="🖨"   label="Print PDF"      color="#374151" onClick={onPrint} />
-          {canDelete   && <Item icon="🗑" label="Delete"        color="#B91C1C" onClick={onDelete} sep />}
+          {isLead ? (
+            <>
+              {/* ── Unbooked lead: reduced menu ── */}
+              <Item icon="👁"  label="View"             color="#1D4ED8" onClick={onView} />
+              {canEditQ && <Item icon="✏️" label="Edit"            color="#E8471C" onClick={onEdit} />}
+              <Item icon="📸" label="Visit Report"     color="#7C3AED" onClick={onVisitReport} />
+              <Item icon="📝" label="Follow-up Remarks" color="#0369A1" onClick={onFollowup} />
+              <Item icon="🔥" label="Mark Hot"   color="#DC2626" onClick={()=>onLeadStatus('Hot')}  sep />
+              <Item icon="❄️" label="Mark Cold"  color="#2563EB" onClick={()=>onLeadStatus('Cold')} />
+              <Item icon="⚰️" label="Mark Dead"  color="#6B7280" onClick={()=>onLeadStatus('Dead')} />
+              <Item icon="⬇"   label="Download PDF"     color="#374151" onClick={onDownload} sep />
+              <Item icon="🖨"   label="Print PDF"        color="#374151" onClick={onPrint} />
+            </>
+          ) : (
+            <>
+              {/* ── Booked / Completed: full menu ── */}
+              <Item icon="👁"  label="View"           color="#1D4ED8" onClick={onView} />
+              {canEditQ    && <Item icon="✏️" label="Edit"          color="#E8471C" onClick={onEdit} />}
+              {showReqEdit && <Item icon="🔓" label="Request Edit"  color="#B45309" onClick={onRequestEdit} />}
+              <Item icon="💳"  label="Record Payment"  color="#15803D" onClick={onPayment} />
+              {onProjectMgmt && <Item icon="📋" label="Project Mgmt"  color="#0369A1" onClick={onProjectMgmt} />}
+              <Item icon="📸" label="Visit Report"   color="#7C3AED" onClick={onVisitReport} />
+              <Item icon="📊" label="Completion %"   color="#15803D" onClick={onCompletion} />
+              {isAdmin && onComplete && (q.project_status||'') !== 'Completed' &&
+                <Item icon="🏆" label="Mark Complete"  color="#CA8A04" onClick={onComplete} />}
+              <Item icon="⬇"   label="Download PDF"   color="#374151" onClick={onDownload} sep />
+              <Item icon="🖨"   label="Print PDF"      color="#374151" onClick={onPrint} />
+              {canDelete   && <Item icon="🗑" label="Delete"        color="#B91C1C" onClick={onDelete} sep />}
+            </>
+          )}
         </div>,
         document.body
       )}
@@ -542,6 +563,79 @@ function AdminPayDeletePanel({ onClose, onActioned }) {
 /* ══════════════════════════════════════════════════════════════
    VISIT REPORT MODAL
 ══════════════════════════════════════════════════════════════ */
+/* ══ FOLLOW-UP MODAL — lead status (Hot/Cold/Dead) + follow-up remarks ══ */
+function FollowupModal({ quotation, onClose, onSaved }) {
+  const [status,  setStatus]  = React.useState(quotation.lead_status || '');
+  const [remarks, setRemarks] = React.useState(quotation.followup_remarks || '');
+  const [saving,  setSaving]  = React.useState(false);
+  const STATUSES = [
+    { key:'Hot',  label:'🔥 Hot',  bg:'#FEF2F2', bd:'#FCA5A5', fg:'#DC2626' },
+    { key:'Cold', label:'❄️ Cold', bg:'#EFF6FF', bd:'#93C5FD', fg:'#2563EB' },
+    { key:'Dead', label:'⚰️ Dead', bg:'#F3F4F6', bd:'#D1D5DB', fg:'#6B7280' },
+  ];
+  const save = async () => {
+    setSaving(true);
+    try {
+      await api.patch(`/quotations/${quotation.id}/lead`, { lead_status: status, followup_remarks: remarks });
+      toast.success('Follow-up saved');
+      onSaved && onSaved({ ...quotation, lead_status: status, followup_remarks: remarks });
+      onClose();
+    } catch (err) {
+      toast.error(err?.response?.data?.message || 'Failed to save follow-up');
+    }
+    setSaving(false);
+  };
+  return ReactDOM.createPortal(
+    <div onMouseDown={onClose}
+      style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:100000,
+        display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+      <div onMouseDown={e=>e.stopPropagation()}
+        style={{background:'#fff',borderRadius:16,width:'100%',maxWidth:460,padding:'22px 24px',
+          fontFamily:"'DM Sans',sans-serif",boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+          <div style={{fontSize:17,fontWeight:800,color:'#1A1A1A'}}>📝 Follow-up</div>
+          <button onClick={onClose}
+            style={{background:'none',border:'none',fontSize:24,cursor:'pointer',color:'#999',lineHeight:1}}>×</button>
+        </div>
+        <div style={{fontSize:12,color:'#888',marginBottom:18}}>
+          {quotation.customer_name||'—'} · QID #{quotation.quotation_id||quotation.id}
+        </div>
+
+        <div style={{fontSize:11,fontWeight:700,color:'#888',letterSpacing:0.5,marginBottom:8}}>LEAD STATUS</div>
+        <div style={{display:'flex',gap:8,marginBottom:18}}>
+          {STATUSES.map(s=>(
+            <button key={s.key} onClick={()=>setStatus(status===s.key?'':s.key)}
+              style={{flex:1,padding:'9px 6px',borderRadius:9,fontSize:13,fontWeight:700,cursor:'pointer',
+                background: status===s.key ? s.bg : '#fff',
+                border: `2px solid ${status===s.key ? s.bd : '#E5E5E5'}`,
+                color: status===s.key ? s.fg : '#999'}}>
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{fontSize:11,fontWeight:700,color:'#888',letterSpacing:0.5,marginBottom:8}}>FOLLOW-UP REMARKS</div>
+        <textarea value={remarks} onChange={e=>setRemarks(e.target.value)} rows={5}
+          placeholder="Add follow-up notes, next call date, client response…"
+          style={{width:'100%',border:'1.5px solid #E0E0E0',borderRadius:9,padding:'10px 12px',fontSize:13,
+            fontFamily:"'DM Sans',sans-serif",resize:'vertical',outline:'none',boxSizing:'border-box'}}/>
+
+        <div style={{display:'flex',gap:10,marginTop:18}}>
+          <button onClick={onClose}
+            style={{flex:1,padding:'11px',borderRadius:9,border:'1.5px solid #E0E0E0',background:'#fff',
+              color:'#555',fontWeight:700,fontSize:14,cursor:'pointer'}}>Cancel</button>
+          <button onClick={save} disabled={saving}
+            style={{flex:2,padding:'11px',borderRadius:9,border:'none',background:'#E8471C',color:'#fff',
+              fontWeight:700,fontSize:14,cursor:saving?'not-allowed':'pointer',opacity:saving?0.7:1}}>
+            {saving?'Saving…':'Save Follow-up'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function VisitReportModal({ quotation, user, onClose }) {
   const [tab,         setTab]         = React.useState('list'); // 'list'|'add'
   const [reports,     setReports]     = React.useState([]);
@@ -3862,13 +3956,24 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   const [showEditReqPanel,    setShowEditReqPanel]    = useState(false);
   const [showPayDelPanel,     setShowPayDelPanel]     = useState(false);
   const [visitReportQ,        setVisitReportQ]        = useState(null);  // quotation for visit report
+  const [followupQ,           setFollowupQ]           = useState(null);  // quotation for follow-up (lead) modal
   const [completionQ,         setCompletionQ]         = useState(null);  // quotation for completion status  // admin: view requests
   const [editRequestModal,    setEditRequestModal]    = useState(null);   // manager: send request {quotation}
   const [approvedEdits,       setApprovedEdits]       = useState([]);     // quotation_ids manager can edit
   const [pmProjectId,         setPmProjectId]          = useState(null); // pre-select a project in PM modal
+  const [activeManagers,      setActiveManagers]       = useState([]);   // ACTIVE manager display names (for the Manager filter dropdown)
 
   const fetchAll = async () => {
-    try { const res=await api.get(`/quotations`); setQuotations(res.data.data||[]); } catch (err) {
+    try {
+      const res = await api.get(`/quotations`);
+      const all = res.data.data || [];
+      // Managers get an INDIVIDUAL dashboard — only their own projects
+      // (site_manager_name = their display name). Admins see everything.
+      const scoped = isManager
+        ? all.filter(q => (q.site_manager_name||'').trim().toLowerCase() === (user.display||'').trim().toLowerCase())
+        : all;
+      setQuotations(scoped);
+    } catch (err) {
       const msg = err?.response?.data?.message || err?.message || 'Failed to fetch quotations';
       console.error('fetchAll error:', msg, err);
       toast.error(msg);
@@ -3883,6 +3988,22 @@ export default function QuotationList({ user = { role: 'admin' } }) {
     } catch { setCcReady(true); }
   };
   useEffect(()=>{ fetchAll(); },[]);
+
+  // Load manager accounts (admin only) and keep ONLY the active ones.
+  // These populate the Manager filter dropdown so it shows just active managers
+  // instead of every name ever typed on a quotation.
+  useEffect(() => {
+    if (!isAdmin) return;
+    api.get('/managers')
+      .then(res => {
+        const list = (res.data?.data || [])
+          .filter(m => Number(m.is_active) === 1)            // active only
+          .map(m => (m.display || m.username || '').trim())  // show display name
+          .filter(Boolean);
+        setActiveManagers(list);
+      })
+      .catch(() => {/* silent — dropdown falls back to quotation names */});
+  }, [isAdmin]);
 
   const handleView     = async (id) => { try { const res=await api.get(`/quotations/${id}`); setSelected(res.data.data); } catch { toast.error('Failed to load'); } };
   const handleEdit     = async (id) => { try { const res=await api.get(`/quotations/${id}`); setEditing(res.data.data);  } catch { toast.error('Failed to load'); } };
@@ -3900,6 +4021,24 @@ export default function QuotationList({ user = { role: 'admin' } }) {
     } catch { toast.error('Failed to load'); }
   };
   const handleDelete   = async (id) => { if (!canDelete) { toast.error('Only admins can delete quotations'); return; } if (!window.confirm('Delete this quotation?')) return; try { await api.delete(`/quotations/${id}`); toast.success('Deleted'); fetchAll(); } catch (err) { toast.error(err?.response?.data?.message || 'Failed to delete quotation'); } };
+  // Admin-only: mark a project as Completed
+  const handleComplete = async (id) => {
+    if (!isAdmin) { toast.error('Only admins can mark a project Completed'); return; }
+    if (!window.confirm('Mark this project as Completed?')) return;
+    await handleStatusChange(id, 'Completed');
+  };
+  // Quick set lead status (Hot / Cold / Dead) on an Unbooked lead
+  const handleLeadStatus = async (id, value) => {
+    const snapshot = quotations;
+    setQuotations(p => p.map(q => q.id === id ? { ...q, lead_status: value } : q));
+    try {
+      await api.patch(`/quotations/${id}/lead`, { lead_status: value });
+      toast.success(`Marked ${value}`);
+    } catch (err) {
+      setQuotations(snapshot); // revert
+      toast.error(err?.response?.data?.message || 'Failed to update lead status');
+    }
+  };
   const handleStatusChange = async (id, status) => {
     // Admin can change ANY status freely
     // Non-admins cannot change Booked projects back
@@ -3943,11 +4082,18 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   // Derive unique branches and managers for filter dropdowns
   const allBranches  = [...new Set(quotations.map(q=>q.site_manager_branch||'').filter(Boolean))].sort();
   const allManagers  = [...new Set(quotations.map(q=>q.site_manager_name||'').filter(Boolean))].sort();
+  // Manager filter dropdown should list ONLY active managers.
+  // If the active-manager list hasn't loaded yet, fall back to names from quotations
+  // so the filter is never empty.
+  const activeManagerNames = [...new Set(activeManagers.map(m=>(m||'').trim()).filter(Boolean))].sort();
+  const managerOptions     = activeManagerNames.length ? activeManagerNames : allManagers;
 
   // A project counts as "Completed" only when BOTH bars are full:
   // payment progress (paid ≥ grand total) AND project completion (%) = 100.
   // Completion % comes from the _cc cache filled by the bulk fetch above.
   const isCompleted = (q) => {
+    // Admin manually marked the project Completed via the Actions menu.
+    if ((q.project_status||'') === 'Completed') return true;
     const total = Number(q.grand_total||0);
     const paid  = Number(q.paid_total||0);
     const paymentDone    = total > 0 && paid >= total;
@@ -3971,7 +4117,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
       (q.location||'').toLowerCase().includes(search.toLowerCase())||
       (q.mobile||'').includes(search);
     const matchBranch  = filterBranch  === 'All' || (q.site_manager_branch||'') === filterBranch;
-    const matchManager = filterManager === 'All' || (q.site_manager_name||'')   === filterManager;
+    const matchManager = filterManager === 'All' || (q.site_manager_name||'').trim().toLowerCase() === filterManager.trim().toLowerCase();
     const createdDate  = new Date(q.created_at);
     const matchFrom    = !filterFrom   || createdDate >= new Date(filterFrom);
     const matchTo      = !filterTo     || createdDate <= new Date(filterTo + 'T23:59:59');
@@ -4085,6 +4231,13 @@ export default function QuotationList({ user = { role: 'admin' } }) {
           onClose={()=>setVisitReportQ(null)}
         />
       )}
+      {followupQ && (
+        <FollowupModal
+          quotation={followupQ}
+          onClose={()=>setFollowupQ(null)}
+          onSaved={(u)=>setQuotations(prev=>prev.map(x=>x.id===u.id?{...x,lead_status:u.lead_status,followup_remarks:u.followup_remarks}:x))}
+        />
+      )}
       {completionQ && (
         <CompletionStatusModal
           quotation={completionQ}
@@ -4176,6 +4329,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
           { icon:'📦', bg:'#FFF8F0', label:'Unbooked Amount',   value: fmtAmt(totalUnbookedAmt),   color:'#F97316', isMoney:true },
           { icon:'✅', bg:'#F0FDF4', label:'Booked Paid',       value: fmtAmt(totalBookedPaid),    color:'#10B981', isMoney:true },
           { icon:'🔴', bg:'#FFF0F0', label:'Booked Balance',    value: fmtAmt(totalBookedBalance), color:'#EF4444', isMoney:true },
+          { icon:'🏆', bg:'#FEFCE8', label:'Completed Projects', value: countCompleted,            color:'#CA8A04', isMoney:false },
         ].map((c,i)=>(
           <div key={i} style={{background:'#fff',borderRadius:14,padding:'18px 20px',boxShadow:'0 2px 12px rgba(0,0,0,0.07)',border:'1.5px solid #F0F0F0',display:'flex',alignItems:'center',gap:14,minHeight:90}}>
             <div style={{width:52,height:52,borderRadius:12,background:c.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>{c.icon}</div>
@@ -4212,7 +4366,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
             <select value={filterManager} onChange={e=>setFilterManager(e.target.value)}
               style={{width:'100%',border:'1.5px solid #E0E0E0',borderRadius:7,padding:'7px 10px',fontSize:12,fontFamily:"'DM Sans',sans-serif",background:'#fff',color:'#1A1A1A',outline:'none'}}>
               <option value="All">All Managers</option>
-              {allManagers.map(m=><option key={m} value={m}>{m}</option>)}
+              {managerOptions.map(m=><option key={m} value={m}>{m}</option>)}
             </select>
           </div>}
           {/* From Date */}
@@ -4285,6 +4439,9 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                     </div>
                   </div>
                   <div className="qc-status">
+                    {(q.project_status||'Unbooked')==='Unbooked' && q.lead_status ? (
+                      <span style={{display:'inline-flex',alignItems:'center',gap:4,padding:'3px 9px',borderRadius:20,fontSize:11,fontWeight:700,marginRight:6,background:q.lead_status==='Hot'?'#FEF2F2':q.lead_status==='Cold'?'#EFF6FF':'#F3F4F6',color:q.lead_status==='Hot'?'#DC2626':q.lead_status==='Cold'?'#2563EB':'#6B7280',border:`1.5px solid ${q.lead_status==='Hot'?'#FCA5A5':q.lead_status==='Cold'?'#93C5FD':'#D1D5DB'}`}}>{q.lead_status==='Hot'?'🔥':q.lead_status==='Cold'?'❄️':'⚰️'} {q.lead_status}</span>
+                    ) : null}
                     {isCompleted(q) ? (
                       <div style={{
                         display:'inline-flex', alignItems:'center', gap:5,
@@ -4402,6 +4559,9 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                     onProjectMgmt={(isManager||isAdmin) && q.project_status==='Booked' ? ()=>{ setPmProjectId(q.id); setShowProjectMgmt(true); } : null}
                     onVisitReport={()=>setVisitReportQ(q)}
                     onCompletion={()=>setCompletionQ(q)}
+                    onComplete={()=>handleComplete(q.id)}
+                    onFollowup={()=>setFollowupQ(q)}
+                    onLeadStatus={(val)=>handleLeadStatus(q.id, val)}
                   />
                 </div>
 
@@ -4417,6 +4577,9 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                 </div></div>
                 <div className="mc-meta">
                   <div className="mc-meta-item">
+                    {(q.project_status||'Unbooked')==='Unbooked' && q.lead_status ? (
+                      <span style={{display:'inline-flex',alignItems:'center',gap:4,padding:'3px 9px',borderRadius:20,fontSize:11,fontWeight:700,marginRight:6,background:q.lead_status==='Hot'?'#FEF2F2':q.lead_status==='Cold'?'#EFF6FF':'#F3F4F6',color:q.lead_status==='Hot'?'#DC2626':q.lead_status==='Cold'?'#2563EB':'#6B7280',border:`1.5px solid ${q.lead_status==='Hot'?'#FCA5A5':q.lead_status==='Cold'?'#93C5FD':'#D1D5DB'}`}}>{q.lead_status==='Hot'?'🔥':q.lead_status==='Cold'?'❄️':'⚰️'} {q.lead_status}</span>
+                    ) : null}
                     {isCompleted(q) ? (
                       <div style={{
                         display:'inline-flex', alignItems:'center', gap:4,
@@ -4489,6 +4652,9 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                     onProjectMgmt={(isManager||isAdmin) && q.project_status==='Booked' ? ()=>{ setPmProjectId(q.id); setShowProjectMgmt(true); } : null}
                     onVisitReport={()=>setVisitReportQ(q)}
                     onCompletion={()=>setCompletionQ(q)}
+                    onComplete={()=>handleComplete(q.id)}
+                    onFollowup={()=>setFollowupQ(q)}
+                    onLeadStatus={(val)=>handleLeadStatus(q.id, val)}
                   />
                 </div>
               </div>
