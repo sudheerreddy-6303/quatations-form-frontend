@@ -313,7 +313,8 @@ export function QuotationPDF({ data }) {
         {/* Company Details */}
         <View style={{ paddingHorizontal: 30, paddingTop: 8, paddingBottom: 6 }}>
           <Text style={{ fontSize: 13, fontWeight: 'bold', color: C.dark }}>DEERAJ INTERIORS</Text>
-          <Text style={{ fontSize: 8, color: '#444', marginTop: 2, lineHeight: 1.4 }}>SECOND FLOOR, PLOT NO.119, KOMPALLY, JEEDIMETLA, GREEN PARK AVENUE, Hyderabad, Medchal Malkajgiri, Telangana, 500055</Text>
+          <Text style={{ fontSize: 8, color: '#444', marginTop: 2, lineHeight: 1.4 }}>Branch 1: SECOND FLOOR, PLOT NO.119, KOMPALLY, JEEDIMETLA, GREEN PARK AVENUE, Hyderabad, Medchal Malkajgiri, Telangana, 500055</Text>
+          <Text style={{ fontSize: 8, color: '#444', lineHeight: 1.4 }}>Branch 2: PAVANI ENCORE BUILDING, BESIDE NANAKRAMGUDA TOLLGATE, ABOVE RATNADEEP, 1ST FLOOR, Hyderabad, Telangana</Text>
           <Text style={{ fontSize: 8, color: '#444' }}>GSTIN/UIN: 36BDFPG9987H1ZY</Text>
           <Text style={{ fontSize: 8, color: '#444' }}>State Name : Telangana, Code : 36</Text>
         </View>

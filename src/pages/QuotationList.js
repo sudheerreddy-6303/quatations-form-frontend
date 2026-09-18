@@ -2306,7 +2306,7 @@ function generateReceipt(txn, quotation, allTransactions=[]) {
 
   <!-- FOOTER -->
   <div class="foot">
-    <div><b>DEERAJ INTERIORS</b> — Second Floor, Plot No.119, Kompally, Jeedimetla, Green Park Avenue, Hyderabad, Medchal Malkajgiri, Telangana — 500055 | GSTIN/UIN: 36BDFPG9987H1ZY | State Code: 36</div>
+    <div><b>DEERAJ INTERIORS</b> — Branch 1: Second Floor, Plot No.119, Kompally, Jeedimetla, Green Park Avenue, Hyderabad, Medchal Malkajgiri, Telangana — 500055 &nbsp;|&nbsp; Branch 2: Pavani Encore Building, Beside Nanakramguda Tollgate, Above Ratnadeep, 1st Floor, Hyderabad, Telangana | GSTIN/UIN: 36BDFPG9987H1ZY | State Code: 36</div>
     <div>Generated: ${new Date().toLocaleDateString('en-IN')} | Ref: ${rNo}</div>
   </div>
 
@@ -2867,7 +2867,8 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
                 <div style={{height:3,background:C.gold}}/>
                 <div style={{padding:'10px 32px 4px',lineHeight:1.5,borderBottom:`1px solid ${C.border}`}}>
                   <div style={{fontSize:14,fontWeight:800,color:C.dark}}>DEERAJ INTERIORS</div>
-                  <div style={{fontSize:9,color:'#444'}}>SECOND FLOOR, PLOT NO.119, KOMPALLY, JEEDIMETLA, GREEN PARK AVENUE, Hyderabad, Medchal Malkajgiri, Telangana, 500055</div>
+                  <div style={{fontSize:9,color:'#444'}}>Branch 1: SECOND FLOOR, PLOT NO.119, KOMPALLY, JEEDIMETLA, GREEN PARK AVENUE, Hyderabad, Medchal Malkajgiri, Telangana, 500055</div>
+                  <div style={{fontSize:9,color:'#444'}}>Branch 2: PAVANI ENCORE BUILDING, BESIDE NANAKRAMGUDA TOLLGATE, ABOVE RATNADEEP, 1ST FLOOR, Hyderabad, Telangana</div>
                   <div style={{fontSize:9,color:'#444'}}>GSTIN/UIN: 36BDFPG9987H1ZY</div>
                   <div style={{fontSize:9,color:'#444'}}>State Name : Telangana, Code : 36</div>
                 </div>

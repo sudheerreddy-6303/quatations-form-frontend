@@ -351,7 +351,8 @@ export function printQuotation(data, transactions=[]) {
     <!-- Company Details -->
     <div style="padding:6px 0 8px;line-height:1.5">
       <div style="font-size:13pt;font-weight:bold;color:#1A1A1A">DEERAJ INTERIORS</div>
-      <div style="font-size:8.5pt;color:#333">SECOND FLOOR, PLOT NO.119, KOMPALLY, JEEDIMETLA, GREEN PARK AVENUE, Hyderabad, Medchal Malkajgiri, Telangana, 500055</div>
+      <div style="font-size:8.5pt;color:#333">Branch 1: SECOND FLOOR, PLOT NO.119, KOMPALLY, JEEDIMETLA, GREEN PARK AVENUE, Hyderabad, Medchal Malkajgiri, Telangana, 500055</div>
+      <div style="font-size:8.5pt;color:#333">Branch 2: PAVANI ENCORE BUILDING, BESIDE NANAKRAMGUDA TOLLGATE, ABOVE RATNADEEP, 1ST FLOOR, Hyderabad, Telangana</div>
       <div style="font-size:8.5pt;color:#333">GSTIN/UIN: 36BDFPG9987H1ZY</div>
       <div style="font-size:8.5pt;color:#333">State Name : Telangana, Code : 36</div>
     </div>
