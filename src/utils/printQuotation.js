@@ -184,6 +184,9 @@ export function printQuotation(data, transactions=[]) {
   const subtotal      = totalInterior + effectiveCeiling;
   const gstPercent    = Number(data.gst_percent||0);
   const gstAmount     = Number(data.gst_amount ||0);
+  const discountPercent = Number(data.discount_percent||0);
+  const discountAmount  = Number(data.discount_amount ||0);
+  const afterDiscount   = subtotal - discountAmount;
   const grandTotal    = Number(data.grand_total ||0) - phantomCeiling;
 
   const smName   = data.site_manager_name || '';
@@ -395,6 +398,8 @@ export function printQuotation(data, transactions=[]) {
       <!-- Totals -->
       <div class="totals-block">
         <div class="totals-row subtotal-row"><span>Subtotal</span><span>${fmtINR(subtotal)}</span></div>
+        ${discountAmount>0?`<div class="totals-row" style="background:#F0FDF4;border-bottom:1px solid #E0E0E0;color:#065F46;font-weight:600"><span>Discount${discountPercent>0?' ('+discountPercent+'%)':''}</span><span>- ${fmtINR(discountAmount)}</span></div>`:''}
+        ${discountAmount>0?`<div class="totals-row subtotal-row"><span>After Discount</span><span>${fmtINR(afterDiscount)}</span></div>`:''}
         ${gstPercent>0?`<div class="totals-row gst-row"><span>GST (${gstPercent}%)</span><span>+ ${fmtINR(gstAmount)}</span></div>`:''}
         <div class="totals-row grand-row">
           <span>GRAND TOTAL${gstPercent>0?' (incl. '+gstPercent+'% GST)':''}</span>

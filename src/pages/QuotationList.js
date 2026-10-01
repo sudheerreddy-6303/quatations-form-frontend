@@ -146,6 +146,7 @@ function CompletionBar({ quotationId }) {
 }
 
 function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdits,
+  onVersions,
   onView, onEdit, onRequestEdit, onPayment, onDownload, onPrint, onDelete, onProjectMgmt, onVisitReport, onCompletion, onComplete, onFollowup, onLeadStatus }) {
   const [open, setOpen]   = React.useState(false);
   const [pos,  setPos]    = React.useState({ top:0, left:0 });
@@ -270,6 +271,7 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
               <Item icon="⚰️" label="Mark Dead"  color="#6B7280" onClick={()=>onLeadStatus('Dead')} />
               <Item icon="⬇"   label="Download PDF"     color="#374151" onClick={onDownload} sep />
               <Item icon="🖨"   label="Print PDF"        color="#374151" onClick={onPrint} />
+              {isAdmin && onVersions && <Item icon="🕘" label="Version History" color="#7C3AED" onClick={onVersions} />}
             </>
           ) : (
             <>
@@ -285,6 +287,7 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
                 <Item icon="🏆" label="Mark Complete"  color="#CA8A04" onClick={onComplete} />}
               <Item icon="⬇"   label="Download PDF"   color="#374151" onClick={onDownload} sep />
               <Item icon="🖨"   label="Print PDF"      color="#374151" onClick={onPrint} />
+              {isAdmin && onVersions && <Item icon="🕘" label="Version History" color="#7C3AED" onClick={onVersions} />}
               {canDelete   && <Item icon="🗑" label="Delete"        color="#B91C1C" onClick={onDelete} sep />}
             </>
           )}
@@ -1306,6 +1309,7 @@ function AdminRequestsPanel({ onClose, onApproved }) {
   const [loading,  setLoading]   = useState(true);
   const [acting,   setActing]    = useState(null);
   const [note,     setNote]      = useState({});
+  const [verTick,  setVerTick]   = useState(0);   // QUOTATION VERSIONS: refresh versions shown in cards
 
   const load = useCallback(() => {
     setLoading(true);
@@ -1323,6 +1327,21 @@ function AdminRequestsPanel({ onClose, onApproved }) {
       await api.patch('/edit-requests/' + id, { status, admin_note: note[id] || '' });
       toast.success(status === 'Approved' ? '✅ Request approved! Manager can now edit.' : '❌ Request denied.');
       if (status === 'Approved') onApproved && onApproved();
+      setVerTick(t => t + 1);
+      // ── QUOTATION VERSIONS: on approve, auto-download the saved version's PDF for admin's records ──
+      if (status === 'Approved') {
+        try {
+          const reqRow = requests.find(r => r.id === id);
+          if (reqRow) {
+            const [qRes, vRes] = await Promise.all([
+              api.get('/quotations/' + reqRow.quotation_id),
+              api.get('/quotations/' + reqRow.quotation_id + '/versions'),
+            ]);
+            const savedNo = (vRes.data?.current_version || 2) - 1;
+            await downloadQuotationVersionPdf(qRes.data.data, savedNo);
+          }
+        } catch { toast.error('Approved, but PDF auto-download failed. Download it from Version History.'); }
+      }
       load();
     } catch { toast.error('Failed.'); }
     setActing(null);
@@ -1401,6 +1420,8 @@ function AdminRequestsPanel({ onClose, onApproved }) {
                           )}
                         </div>
                       </div>
+                      {/* QUOTATION VERSIONS — all versions of this quotation (admin only) */}
+                      <RequestVersionsInline quotationId={r.quotation_id} refreshKey={verTick} defaultOpen />
                       <div style={{marginBottom:8}}>
                         <input
                           placeholder="Optional note to manager (shown on deny/approve)…"
@@ -1457,6 +1478,8 @@ function AdminRequestsPanel({ onClose, onApproved }) {
                             {r.status}
                           </span>
                         </div>
+                        {/* QUOTATION VERSIONS — all versions of this quotation (admin only) */}
+                        <RequestVersionsInline quotationId={r.quotation_id} refreshKey={verTick} />
                       </div>
                     );
                   })}
@@ -1553,6 +1576,27 @@ const STAGE_PERCENTAGES = {
   'Doors Fitting':           10,
   'Handles Fitting':          5,
   'Finishing and Hand Over': 10,
+};
+
+// ── STAGE-WISE PAYMENT: recalculate scheduled stage amounts for a (new) grand total.
+// Same rule as the Payment Schedule window; used when saving an edit so the schedule
+// always matches the latest grand total even if the schedule window was not opened.
+const rebalancePayStagesToTotal = (stages, grandTotal) => {
+  const gt = parseFloat(grandTotal) || 0;
+  if (!Array.isArray(stages) || !stages.length || gt <= 0) return stages;
+  if (!stages.every(r => r && typeof r === 'object')) return stages;
+  const named = stages.map((r, i) => ((r.stage && String(r.stage).trim()) ? i : -1)).filter(i => i >= 0);
+  if (!named.length) return stages;
+  if (!named.some(i => STAGE_PERCENTAGES[String(stages[i].stage).trim()] !== undefined)) return stages;
+  const sum = stages.reduce((t, r) => t + (parseFloat(r.paymentAmount) || 0), 0);
+  if (Math.abs(sum - gt) <= 1) return stages;
+  const round2 = (n) => Math.round(n * 100) / 100;
+  const amtFor = (nm) => round2(gt * (Number(STAGE_PERCENTAGES[String(nm).trim()] || 0)) / 100);
+  const last = named[named.length - 1];
+  let next = stages.map((r, i) => (named.includes(i) && i !== last) ? { ...r, paymentAmount: String(amtFor(r.stage)) } : r);
+  const others = next.reduce((t, r, i) => (i === last ? t : t + (parseFloat(r.paymentAmount) || 0)), 0);
+  next = next.map((r, i) => (i === last ? { ...r, paymentAmount: String(round2(Math.max(0, gt - others))) } : r));
+  return next;
 };
 
 /* Convert any date string to YYYY-MM-DD for <input type="date"> */
@@ -2899,8 +2943,8 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
                   }
                   <div style={{margin:'12px 0',border:`1px solid ${C.border}`,borderRadius:4,overflow:'hidden'}}>
                     <div style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',background:C.lightGray,borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:10,fontWeight:600}}>Subtotal</span><span style={{fontSize:10,fontWeight:600}}>Rs. {subtotal.toLocaleString('en-IN')}</span></div>
-                    {discountPercent>0&&<div style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',background:'#F0FDF4',borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:10,fontWeight:600,color:'#065F46'}}>Discount ({discountPercent}%)</span><span style={{fontSize:10,fontWeight:600,color:'#065F46'}}>- Rs. {discountAmount.toLocaleString('en-IN')}</span></div>}
-                    {discountPercent>0&&<div style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',background:C.lightGray,borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:10,fontWeight:600,color:'#555'}}>After Discount</span><span style={{fontSize:10,fontWeight:600}}>Rs. {afterDiscount.toLocaleString('en-IN')}</span></div>}
+                    {discountAmount>0&&<div style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',background:'#F0FDF4',borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:10,fontWeight:600,color:'#065F46'}}>Discount{discountPercent>0?` (${discountPercent}%)`:''}</span><span style={{fontSize:10,fontWeight:600,color:'#065F46'}}>- Rs. {discountAmount.toLocaleString('en-IN')}</span></div>}
+                    {discountAmount>0&&<div style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',background:C.lightGray,borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:10,fontWeight:600,color:'#555'}}>After Discount</span><span style={{fontSize:10,fontWeight:600}}>Rs. {afterDiscount.toLocaleString('en-IN')}</span></div>}
                     {gstPercent>0&&<div style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',background:'#FFF0EC',borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:10,fontWeight:600,color:'#92400E'}}>GST ({gstPercent}%)</span><span style={{fontSize:10,fontWeight:600,color:'#92400E'}}>+ Rs. {gstAmount.toLocaleString('en-IN')}</span></div>}
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:C.dark,padding:'9px 14px'}}>
                       <span style={{fontSize:12,color:C.gold,fontWeight:700,letterSpacing:1}}>GRAND TOTAL{discountPercent>0?` (${discountPercent}% disc)`:''}{gstPercent>0?` (incl. ${gstPercent}% GST)`:''}</span>
@@ -3345,8 +3389,9 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
         pay_stages: payStages,
         project_status: data.project_status || 'Unbooked',
       };
+      payload.pay_stages = rebalancePayStagesToTotal(payStages, grandTotal); // stage amounts follow the new grand total
       await api.put(`/quotations/${data.id}`, payload);
-      await api.put(`/quotations/${data.id}/payment-stages`, { pay_stages: payStages });
+      await api.put(`/quotations/${data.id}/payment-stages`, { pay_stages: payload.pay_stages });
       toast.success('Quotation updated!');
       const fresh = await api.get(`/quotations/${data.id}`);
       onSaved(fresh.data.data);
@@ -3917,6 +3962,212 @@ const fmtAmt = (n) => {
   return '₹' + v.toLocaleString('en-IN');
 };
 
+/* ══════════════════════════════════════════════════════════════
+   QUOTATION VERSIONS — Admin only
+   A version is saved automatically when admin approves an edit request
+   or edits a Booked project. Only admins can see / download versions.
+══════════════════════════════════════════════════════════════ */
+async function downloadQuotationVersionPdf(qData, versionNo) {
+  const blob = await pdf(<QuotationPDF data={qData}/>).toBlob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url;
+  a.download = `Deeraj_Quotation_${String(qData.customer_name||'Customer').replace(/\s+/g,'_')}_${qData.id}_V${versionNo}.pdf`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Compact list of ALL versions of one quotation — used inside the admin Edit Permission Requests panel.
+function RequestVersionsInline({ quotationId, refreshKey, defaultOpen = false }) {
+  const [open,     setOpen]     = useState(defaultOpen);
+  const [versions, setVersions] = useState([]);
+  const [current,  setCurrent]  = useState(1);
+  const [loaded,   setLoaded]   = useState(false);
+  const [busy,     setBusy]     = useState(null);
+
+  useEffect(() => {
+    let alive = true;
+    api.get(`/quotations/${quotationId}/versions`)
+      .then(r => { if (!alive) return; setVersions(r.data?.data || []); setCurrent(r.data?.current_version || 1); })
+      .catch(() => {})
+      .finally(() => alive && setLoaded(true));
+    return () => { alive = false; };
+  }, [quotationId, refreshKey]);
+
+  const rs = (n) => 'Rs. ' + Math.round(Number(n || 0)).toLocaleString('en-IN');
+  const dt = (d) => d ? new Date(d).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+
+  const dlCurrent = async () => {
+    setBusy('current');
+    try { const r = await api.get(`/quotations/${quotationId}`); await downloadQuotationVersionPdf(r.data.data, current); toast.success(`V${current} downloaded`); }
+    catch { toast.error('Download failed.'); }
+    setBusy(null);
+  };
+  const dlVersion = async (v) => {
+    setBusy(v.id);
+    try { const r = await api.get(`/quotations/${quotationId}/versions/${v.id}`); await downloadQuotationVersionPdf(r.data.data.quotation, v.version_no); toast.success(`V${v.version_no} downloaded`); }
+    catch { toast.error('Download failed.'); }
+    setBusy(null);
+  };
+
+  const smallBtn = { padding:'4px 10px', borderRadius:6, border:'1.5px solid #E8471C', background:'#fff', color:'#E8471C', fontSize:11, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' };
+  const row = { display:'flex', justifyContent:'space-between', alignItems:'center', gap:10, padding:'7px 10px', borderTop:'1px solid #F1F1F1' };
+
+  return (
+    <div style={{margin:'10px 0',border:'1px solid #E5E7EB',borderRadius:10,background:'#fff',overflow:'hidden'}}>
+      <button onClick={()=>setOpen(o=>!o)}
+        style={{width:'100%',display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',
+          background:'#FAFAFA',border:'none',cursor:'pointer',fontSize:12,fontWeight:700,color:'#374151'}}>
+        <span>🕘 All versions {loaded ? `(${versions.length + 1})` : ''} <span style={{marginLeft:6,color:'#E8471C'}}>Current: V{current}</span></span>
+        <span style={{color:'#9CA3AF'}}>{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div>
+          <div style={{...row, background:'#FFF8F5'}}>
+            <div style={{fontSize:12}}><b style={{color:'#E8471C'}}>V{current}</b> <span style={{color:'#15803D',fontWeight:700,fontSize:10,marginLeft:4}}>● CURRENT</span></div>
+            <button style={smallBtn} disabled={busy==='current'} onClick={dlCurrent}>{busy==='current' ? '…' : '⬇ PDF'}</button>
+          </div>
+          {!loaded && <div style={{...row,color:'#999',fontSize:12}}>Loading…</div>}
+          {loaded && versions.length === 0 && (
+            <div style={{...row,color:'#888',fontSize:12}}>No earlier versions yet — V1 is saved when you approve.</div>
+          )}
+          {versions.map(v => {
+            const after = v.grand_total_after != null ? Number(v.grand_total_after) : null;
+            const diff  = after != null ? after - Number(v.grand_total || 0) : null;
+            return (
+              <div key={v.id} style={row}>
+                <div style={{fontSize:12,color:'#444',lineHeight:1.5,minWidth:0}}>
+                  <b style={{color:'#1a1a1a'}}>V{v.version_no}</b>
+                  <span style={{marginLeft:6,fontSize:10,fontWeight:700,padding:'1px 6px',borderRadius:8,
+                    background: v.saved_reason==='admin_edit' ? '#EFF6FF' : '#FEF9E6',
+                    color: v.saved_reason==='admin_edit' ? '#1D4ED8' : '#B45309'}}>
+                    {v.saved_reason==='admin_edit' ? 'Admin edit' : 'Edit approved'}
+                  </span>
+                  <span style={{marginLeft:6,color:'#888',fontSize:11}}>{dt(v.created_at)}</span>
+                  <div>
+                    {rs(v.grand_total)}{after != null && <> → {rs(after)} {diff !== 0 && <span style={{color: diff > 0 ? '#B91C1C' : '#15803D', fontWeight:700}}>({diff > 0 ? '+' : '−'} {rs(Math.abs(diff))})</span>}</>}
+                    <span style={{color:'#888'}}> · {v.edited_by ? `edited by ${v.edited_by}` : 'not edited yet'}</span>
+                  </div>
+                  {v.request_reason && v.saved_reason !== 'admin_edit' && <div style={{color:'#777',fontStyle:'italic'}}>"{v.request_reason}"</div>}
+                </div>
+                <button style={smallBtn} disabled={busy===v.id} onClick={()=>dlVersion(v)}>{busy===v.id ? '…' : '⬇ PDF'}</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function VersionHistoryModal({ quotation, onClose }) {
+  const [versions, setVersions] = useState([]);
+  const [current,  setCurrent]  = useState(1);
+  const [loading,  setLoading]  = useState(true);
+  const [busy,     setBusy]     = useState(null);
+
+  useEffect(() => {
+    api.get(`/quotations/${quotation.id}/versions`)
+      .then(r => { setVersions(r.data?.data || []); setCurrent(r.data?.current_version || 1); })
+      .catch(() => toast.error('Failed to load versions.'))
+      .finally(() => setLoading(false));
+  }, [quotation.id]);
+
+  const rs  = (n) => 'Rs. ' + Math.round(Number(n || 0)).toLocaleString('en-IN');
+  const dt  = (d) => d ? new Date(d).toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '—';
+
+  const downloadCurrent = async () => {
+    setBusy('current');
+    try { const r = await api.get(`/quotations/${quotation.id}`); await downloadQuotationVersionPdf(r.data.data, current); toast.success(`V${current} downloaded`); }
+    catch { toast.error('Download failed.'); }
+    setBusy(null);
+  };
+  const downloadVersion = async (v) => {
+    setBusy(v.id);
+    try { const r = await api.get(`/quotations/${quotation.id}/versions/${v.id}`); await downloadQuotationVersionPdf(r.data.data.quotation, v.version_no); toast.success(`V${v.version_no} downloaded`); }
+    catch { toast.error('Download failed.'); }
+    setBusy(null);
+  };
+
+  const pill = (bg, color, text) => (
+    <span style={{display:'inline-block',padding:'2px 8px',borderRadius:10,background:bg,color,fontSize:10,fontWeight:700}}>{text}</span>
+  );
+  const btn = { padding:'6px 12px', borderRadius:7, border:'1.5px solid #E8471C', background:'#fff', color:'#E8471C', fontSize:12, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' };
+
+  return ReactDOM.createPortal(
+    <div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.45)',zIndex:10000,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:'#fff',borderRadius:14,width:'100%',maxWidth:760,maxHeight:'88vh',display:'flex',flexDirection:'column',boxShadow:'0 20px 60px rgba(0,0,0,0.25)',overflow:'hidden'}}>
+        {/* Header */}
+        <div style={{padding:'16px 20px',borderBottom:'1px solid #eee',display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+          <div>
+            <div style={{fontSize:17,fontWeight:800,color:'#1a1a1a'}}>🕘 Version History</div>
+            <div style={{fontSize:13,color:'#666',marginTop:3}}>{quotation.customer_name} · Quotation #{quotation.id} {quotation.site_name ? '· '+quotation.site_name : ''}</div>
+            <div style={{marginTop:6,display:'flex',gap:6,flexWrap:'wrap'}}>
+              {pill('#FFF0EC','#E8471C',`Current: V${current}`)}
+              {pill('#F3F4F6','#4B5563','🔒 Visible to admin only')}
+            </div>
+          </div>
+          <button onClick={onClose} style={{border:'none',background:'#f3f3f3',borderRadius:8,width:32,height:32,fontSize:16,cursor:'pointer'}}>✕</button>
+        </div>
+
+        {/* Body */}
+        <div style={{overflowY:'auto',padding:'14px 20px 20px'}}>
+          {loading ? <div style={{padding:30,textAlign:'center',color:'#999'}}>Loading…</div> : (
+            <>
+              {/* Current version */}
+              <div style={{border:'2px solid #E8471C',borderRadius:10,padding:'12px 14px',marginBottom:12,display:'flex',justifyContent:'space-between',alignItems:'center',gap:12,background:'#FFF8F5'}}>
+                <div>
+                  <div style={{fontWeight:800,fontSize:15,color:'#E8471C'}}>V{current} <span style={{fontSize:11,color:'#15803D',marginLeft:6}}>● CURRENT</span></div>
+                  <div style={{fontSize:12,color:'#555',marginTop:3}}>Grand total: <b>{rs(quotation.grand_total)}</b></div>
+                </div>
+                <button style={btn} disabled={busy==='current'} onClick={downloadCurrent}>{busy==='current' ? '…' : '⬇ PDF'}</button>
+              </div>
+
+              {versions.length === 0 && (
+                <div style={{padding:'18px 14px',textAlign:'center',color:'#888',fontSize:13,background:'#FAFAFA',borderRadius:10}}>
+                  No earlier versions yet. A version is saved automatically when you approve an edit request or edit a Booked project.
+                </div>
+              )}
+
+              {versions.map(v => {
+                const before = Number(v.grand_total || 0);
+                const after  = v.grand_total_after != null ? Number(v.grand_total_after) : null;
+                const diff   = after != null ? after - before : null;
+                return (
+                  <div key={v.id} style={{border:'1px solid #E5E7EB',borderRadius:10,padding:'12px 14px',marginBottom:10}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:12}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
+                          <span style={{fontWeight:800,fontSize:15,color:'#1a1a1a'}}>V{v.version_no}</span>
+                          {v.saved_reason === 'admin_edit'
+                            ? pill('#EFF6FF','#1D4ED8','Admin edit')
+                            : pill('#FEF9E6','#B45309','Edit approved')}
+                          <span style={{fontSize:11,color:'#888'}}>Saved {dt(v.created_at)}</span>
+                        </div>
+                        <div style={{fontSize:12,color:'#444',marginTop:6,lineHeight:1.6}}>
+                          {v.saved_reason !== 'admin_edit' && <div><b>Requested by:</b> {v.requested_by || '—'} &nbsp;·&nbsp; <b>Approved by:</b> {v.approved_by || '—'}</div>}
+                          {v.request_reason && v.saved_reason !== 'admin_edit' && <div><b>Reason:</b> {v.request_reason}</div>}
+                          <div><b>Edited by:</b> {v.edited_by ? `${v.edited_by} on ${dt(v.edited_at)}` : <span style={{color:'#B45309'}}>Not edited yet (permission open)</span>}</div>
+                          <div>
+                            <b>Grand total:</b> {rs(before)}
+                            {after != null && <> → {rs(after)} {diff !== 0 && <span style={{color: diff > 0 ? '#B91C1C' : '#15803D', fontWeight:700}}>({diff > 0 ? '+' : '−'} {rs(Math.abs(diff))})</span>}</>}
+                          </div>
+                        </div>
+                      </div>
+                      <button style={btn} disabled={busy===v.id} onClick={()=>downloadVersion(v)}>{busy===v.id ? '…' : '⬇ PDF'}</button>
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 export default function QuotationList({ user = { role: 'admin' } }) {
   const navigate = useNavigate();
   // Role permissions
@@ -3961,6 +4212,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   const [completionQ,         setCompletionQ]         = useState(null);  // quotation for completion status  // admin: view requests
   const [editRequestModal,    setEditRequestModal]    = useState(null);   // manager: send request {quotation}
   const [approvedEdits,       setApprovedEdits]       = useState([]);     // quotation_ids manager can edit
+  const [versionsQ,           setVersionsQ]           = useState(null);   // admin: quotation whose Version History is open
   const [pmProjectId,         setPmProjectId]          = useState(null); // pre-select a project in PM modal
   const [activeManagers,      setActiveManagers]       = useState([]);   // ACTIVE manager display names (for the Manager filter dropdown)
 
@@ -3990,6 +4242,42 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   };
   useEffect(()=>{ fetchAll(); },[]);
 
+  // ── QUOTATION VERSIONS: manager loads the Booked projects admin has approved for editing ──
+  const loadMyApprovals = () => {
+    if (!isManager) return;
+    api.get('/my-edit-approvals')
+      .then(r => setApprovedEdits((r.data?.data || []).map(Number)))
+      .catch(() => {/* silent — manager just keeps the Request Edit button */});
+  };
+  useEffect(()=>{ loadMyApprovals(); },[]);
+
+  // ── QUOTATION VERSIONS: manager gets the admin's approval live (no page refresh needed).
+  //    Re-checks every 20 seconds and whenever the manager comes back to the tab,
+  //    and shows a message when a new approval arrives.
+  const _prevApprovals = useRef(null);
+  useEffect(() => {
+    if (!isManager) return;
+    const check = () => api.get('/my-edit-approvals')
+      .then(r => {
+        const ids = (r.data?.data || []).map(Number);
+        if (_prevApprovals.current) {
+          const fresh = ids.filter(x => !_prevApprovals.current.includes(x));
+          if (fresh.length) {
+            fetchAll();
+            toast.success(`✅ Admin approved your edit request (Quotation ${fresh.map(x => '#' + x).join(', ')}). Open Actions → Edit to make your changes.`, { duration: 7000 });
+          }
+        }
+        _prevApprovals.current = ids;
+        setApprovedEdits(ids);
+      })
+      .catch(() => {/* silent */});
+    check();
+    const timer = setInterval(check, 20000);
+    const onFocus = () => check();
+    window.addEventListener('focus', onFocus);
+    return () => { clearInterval(timer); window.removeEventListener('focus', onFocus); };
+  }, []);
+
   // Load manager accounts (admin only) and keep ONLY the active ones.
   // These populate the Manager filter dropdown so it shows just active managers
   // instead of every name ever typed on a quotation.
@@ -4010,6 +4298,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   const handleEdit     = async (id) => { try { const res=await api.get(`/quotations/${id}`); setEditing(res.data.data);  } catch { toast.error('Failed to load'); } };
   const handleEditSaved= (freshData) => {
     fetchAll();
+    loadMyApprovals();
     if (freshData) {
       // Small delay so EditModal fully unmounts before ViewModal opens
       setTimeout(() => setSelected({...freshData, _ts: Date.now()}), 50);
@@ -4205,6 +4494,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
       )}
       {selected && <ViewModal key={selected.id+'_'+(selected.updated_at||selected.created_at||Math.random())} data={selected} onClose={()=>setSelected(null)} canDelete={canDelete} onDelete={(id)=>{ handleDelete(id); setSelected(null); }}/>}
       {editing  && <EditModal data={editing}  onClose={()=>setEditing(null)} onSaved={handleEditSaved} canDelete={canDelete} onDelete={(id)=>{ handleDelete(id); setEditing(null); }}/>}
+      {versionsQ && isAdmin && <VersionHistoryModal quotation={versionsQ} onClose={()=>setVersionsQ(null)} />}
       {editRequestModal && (
         <EditRequestModal
           quotation={editRequestModal}
@@ -4563,6 +4853,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                     onComplete={()=>handleComplete(q.id)}
                     onFollowup={()=>setFollowupQ(q)}
                     onLeadStatus={(val)=>handleLeadStatus(q.id, val)}
+                    onVersions={isAdmin ? ()=>setVersionsQ(q) : null}
                   />
                 </div>
 
@@ -4656,6 +4947,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                     onComplete={()=>handleComplete(q.id)}
                     onFollowup={()=>setFollowupQ(q)}
                     onLeadStatus={(val)=>handleLeadStatus(q.id, val)}
+                    onVersions={isAdmin ? ()=>setVersionsQ(q) : null}
                   />
                 </div>
               </div>

@@ -280,6 +280,9 @@ export function QuotationPDF({ data }) {
   const subtotal      = totalInterior + effectiveCeiling;
   const gstPercent    = Number(data.gst_percent || 0);
   const gstAmount     = Number(data.gst_amount  || 0);
+  const discountPercent = Number(data.discount_percent || 0);
+  const discountAmount  = Number(data.discount_amount  || 0);
+  const afterDiscount   = subtotal - discountAmount;
   const grandTotal    = Number(data.grand_total  || 0) - phantomCeiling;
 
   let tcItems = data.tc_items;
@@ -450,6 +453,18 @@ export function QuotationPDF({ data }) {
             <Text style={s.subtotalLabel}>Subtotal</Text>
             <Text style={s.subtotalValue}>{fmt(subtotal)}</Text>
           </View>
+          {discountAmount > 0 && (
+            <View style={[s.subtotalRow, { backgroundColor: '#F0FDF4' }]}>
+              <Text style={[s.subtotalLabel, { color: '#065F46', fontWeight: 'bold' }]}>Discount{discountPercent > 0 ? ` (${discountPercent}%)` : ''}</Text>
+              <Text style={[s.subtotalValue, { color: '#065F46' }]}>- {fmt(discountAmount)}</Text>
+            </View>
+          )}
+          {discountAmount > 0 && (
+            <View style={s.subtotalRow}>
+              <Text style={s.subtotalLabel}>After Discount</Text>
+              <Text style={s.subtotalValue}>{fmt(afterDiscount)}</Text>
+            </View>
+          )}
           {gstPercent > 0 && (
             <View style={s.gstRow}>
               <Text style={s.gstLabel}>GST ({gstPercent}%)</Text>
