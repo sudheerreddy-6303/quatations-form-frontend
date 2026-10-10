@@ -117,4 +117,4 @@ export const calcTotal = (item) => {
   return Math.round(calcArea(item) * unitCost * 100) / 100;
 };
 
-export const calcRoomTotal = (items) => items.reduce((s, i) => s + calcTotal(i), 0);
+export const calcRoomTotal = (items) => items.reduce((s, i) => s + (i && i.excluded ? 0 : calcTotal(i)), 0); // OFF rows not counted

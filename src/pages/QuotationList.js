@@ -1496,6 +1496,7 @@ import { pdf } from '@react-pdf/renderer';
 import { QuotationPDF } from '../components/QuotationPDF';
 import { DEFAULT_ROOMS, calcArea, calcTotal } from '../utils/roomData';
 import { printQuotation } from '../utils/printQuotation';
+import { showQuotationSavedPopup } from '../utils/savedPopup';
 import ProjectManagement from '../components/ProjectManagement';
 import './QuotationList.css';
 
@@ -1645,6 +1646,22 @@ const fileToBase64 = (file) => new Promise((res,rej)=>{ const r=new FileReader()
 /* ─── Unified item calc (same formula as roomData.js) ─── */
 const calcItemTotal = (it) => calcTotal(it);
 const calcItemArea  = (it) => calcArea(it);
+
+// ── ROW ON/OFF TOGGLE (room items): OFF = row stays in the quotation but is NOT counted in totals ──
+const IncludeToggle = ({ on, onChange }) => (
+  <button type="button" onClick={() => onChange(!on)}
+    title={on ? 'Included in total — click to exclude this row' : 'NOT included in total — click to include this row'}
+    style={{ width: 34, height: 18, minHeight: 18, maxHeight: 18, flexShrink: 0, borderRadius: 9, border: 'none', padding: 2, cursor: 'pointer', verticalAlign: 'middle',
+      marginRight: 6, display: 'inline-flex', alignItems: 'center', justifyContent: on ? 'flex-end' : 'flex-start',
+      background: on ? '#10B981' : '#D1D5DB', transition: 'all .15s' }}>
+    <span style={{ width: 14, height: 14, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.25)' }} />
+  </button>
+);
+const OFF_ROW_STYLE = { opacity: 0.45, background: '#F3F4F6' };
+// Room-item amounts that respect the ON/OFF toggle (OFF rows = 0)
+const calcRoomItemTotal = (it) => (it && it.excluded) ? 0 : calcItemTotal(it);
+const calcRoomAccTotal  = (it) => (it && it.excluded) ? 0 : (it.nos * it.unitCost);
+const calcRoomItemArea  = (it) => (it && it.excluded) ? 0 : calcArea(it);
 
 /* ══════════════════════════════════════════════════════════════
    VIEW MODAL
@@ -2820,8 +2837,8 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
   const TableSection = ({ label, items, isAccessory, sectionColor, sectionBg }) => {
     if (!items||!items.length) return null;
     const total = isAccessory
-      ? items.reduce((s,it)=>s+(it.nos*it.unitCost),0)
-      : items.reduce((s,it)=>s+calcItemTotal(it),0);
+      ? items.reduce((s,it)=>s+calcRoomAccTotal(it),0)
+      : items.reduce((s,it)=>s+calcRoomItemTotal(it),0);
     const bg    = sectionBg || C.sectionBg;
     const color = sectionColor || C.gold;
     return (
@@ -2836,12 +2853,12 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
               <colgroup><col style={{width:'38%'}}/><col style={{width:'12%'}}/><col style={{width:'20%'}}/><col style={{width:'14%'}}/><col style={{width:'16%'}}/></colgroup>
               <thead><tr>{[['ITEM','left'],['QTY','center'],['UNIT COST (Rs.)','right'],['TOTAL (Rs.)','right'],['REMARKS','left']].map(([h,a])=><th key={h} style={{...thBase,textAlign:a}}>{h}</th>)}</tr></thead>
               <tbody>{items.map((it,i)=>(
-                <tr key={i} style={{background:i%2===1?C.rowAlt:C.white}}>
+                <tr key={i} style={{background:i%2===1?C.rowAlt:C.white,...(it.excluded?{opacity:0.5,background:'#F3F4F6'}:{})}}>
                   <td style={tdBase}>{it.name}</td>
                   <td style={{...tdBase,textAlign:'center'}}>{it.nos}</td>
                   <td style={{...tdBase,textAlign:'right'}}>{(it.unitCost||0).toLocaleString('en-IN')}</td>
-                  <td style={{...tdGold,textAlign:'right'}}>{(it.nos*it.unitCost).toLocaleString('en-IN')}</td>
-                  <td style={tdBase}>{it.remarks}</td>
+                  <td style={{...tdGold,textAlign:'right',...(it.excluded?{textDecoration:'line-through',color:'#9CA3AF'}:{})}}>{(it.nos*it.unitCost).toLocaleString('en-IN')}</td>
+                  <td style={tdBase}>{it.excluded&&<b style={{color:'#6B7280'}}>Not included{it.remarks?' · ':''}</b>}{it.remarks}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -2852,7 +2869,7 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
               <tbody>{items.map((it,i)=>{
                 const area=calcItemArea(it); const tot=calcItemTotal(it);
                 return (
-                  <tr key={i} style={{background:i%2===1?C.rowAlt:C.white}}>
+                  <tr key={i} style={{background:i%2===1?C.rowAlt:C.white,...(it.excluded?{opacity:0.5,background:'#F3F4F6'}:{})}}>
                     <td style={tdBase}>{it.name}</td>
                     <td style={{...tdBase,textAlign:'center'}}>{it.type!=='FIXED'?it.width:''}</td>
                     <td style={{...tdBase,textAlign:'center'}}>{it.type!=='FIXED'?it.height:''}</td>
@@ -2860,8 +2877,8 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
                     <td style={{...tdBase,textAlign:'center'}}>{area||'—'}</td>
                     <td style={{...tdBase,textAlign:'center'}}>{it.type}</td>
                     <td style={{...tdBase,textAlign:'right'}}>{(it.unitCost||0).toLocaleString('en-IN')}</td>
-                    <td style={{...tdGold,textAlign:'right'}}>{tot.toLocaleString('en-IN')}</td>
-                    <td style={tdBase}>{it.remarks}</td>
+                    <td style={{...tdGold,textAlign:'right',...(it.excluded?{textDecoration:'line-through',color:'#9CA3AF'}:{})}}>{tot.toLocaleString('en-IN')}</td>
+                    <td style={tdBase}>{it.excluded&&<b style={{color:'#6B7280'}}>Not included{it.remarks?' · ':''}</b>}{it.remarks}</td>
                   </tr>
                 );
               })}</tbody>
@@ -2921,6 +2938,7 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
                     <div style={{fontSize:8,fontWeight:700,color:'#AAA',letterSpacing:1,textTransform:'uppercase',marginBottom:6,borderBottom:`1px solid ${C.border}`,paddingBottom:3}}>Client Information</div>
                     <div style={{display:'flex',gap:6,marginBottom:3}}><span style={{fontSize:8,color:C.gray,minWidth:52}}>Name</span><span style={{fontSize:11,fontWeight:700}}>{data.customer_name}</span></div>
                     <div style={{display:'flex',gap:6,marginBottom:3}}><span style={{fontSize:8,color:C.gray,minWidth:52}}>Phone</span><span style={{fontSize:11,fontWeight:700}}>{data.customer_phone||data.mobile||'—'}</span></div>
+                    <div style={{display:'flex',gap:6,marginBottom:3}}><span style={{fontSize:8,color:C.gray,minWidth:52}}>Project Type</span><span style={{fontSize:11,fontWeight:700}}>{data.project_type||'—'}</span></div>
                     <div style={{display:'flex',gap:6}}><span style={{fontSize:8,color:C.gray,minWidth:52}}>Location</span><span style={{fontSize:11,fontWeight:700}}>{data.location||'—'}</span></div>
                   </div>
                   <div style={{width:1,background:C.border,margin:'0 16px'}}/>
@@ -3337,7 +3355,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
 
 
   // ── Totals ───────────────────────────────────────────────────
-  const totalInterior    = Object.values(rooms).reduce((s,r)=>s+r.items.reduce((ss,it)=>ss+calcItemTotal(it),0),0);
+  const totalInterior    = Object.values(rooms).reduce((s,r)=>s+r.items.reduce((ss,it)=>ss+calcRoomItemTotal(it),0),0);
   const sectionTotals    = {};
   Object.entries(sections).forEach(([k,sec])=>{ sectionTotals[k]=sec.items.reduce((s,it)=>s+calcItemTotal(it),0); });
   const totalAllSections = Object.values(sectionTotals).reduce((s,v)=>s+v,0);
@@ -3352,7 +3370,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
   // Total project SFT (same calc used when saving total_sft below) — for display in the summary.
   const totalProjectSft  = parseFloat(Object.entries(rooms).reduce((s, [k, r]) => {
     if (k === 'accessories') return s;
-    return s + r.items.reduce((ss, i) => ss + calcArea(i), 0);
+    return s + r.items.reduce((ss, i) => ss + calcRoomItemArea(i), 0);
   }, 0).toFixed(2));
 
   // ── Save ─────────────────────────────────────────────────────
@@ -3384,7 +3402,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
         total_interior: totalInterior, total_ceiling: totalAllSections, grand_total: grandTotal,
         total_sft: parseFloat(Object.entries(rooms).reduce((s, [k, r]) => {
           if (k === 'accessories') return s;
-          return s + r.items.reduce((ss, i) => ss + calcArea(i), 0);
+          return s + r.items.reduce((ss, i) => ss + calcRoomItemArea(i), 0);
         }, 0).toFixed(2)),
         pay_stages: payStages,
         project_status: data.project_status || 'Unbooked',
@@ -3393,6 +3411,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
       await api.put(`/quotations/${data.id}`, payload);
       await api.put(`/quotations/${data.id}/payment-stages`, { pay_stages: payload.pay_stages });
       toast.success('Quotation updated!');
+      showQuotationSavedPopup({ id: data.id, customer: clientName, site: siteName, total: grandTotal, isEdit: true }); // success popup
       const fresh = await api.get(`/quotations/${data.id}`);
       onSaved(fresh.data.data);
       onClose();
@@ -3593,7 +3612,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                 <div className="nav-overview-group-title">🏠 Rooms</div>
                 <div className="nav-overview-grid">
                   {Object.entries(rooms).map(([key,room], idx, arr)=>{
-                    const t=room.items.reduce((s,it)=>s+(key==='accessories'?it.nos*it.unitCost:calcItemTotal(it)),0);
+                    const t=room.items.reduce((s,it)=>s+(key==='accessories'?calcRoomAccTotal(it):calcRoomItemTotal(it)),0);
                     const isDragging = dragRoomKey === key;
                     const isDropTarget = dragOverRoomKey === key && dragRoomKey && dragRoomKey !== key;
                     return (
@@ -3665,7 +3684,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
               {Object.entries(rooms).map(([key,room])=>{
                 const isMin=!!minimized[key];
                 const isAcc=key==='accessories';
-                const roomTotal=isAcc?room.items.reduce((s,i)=>s+i.nos*i.unitCost,0):room.items.reduce((s,it)=>s+calcItemTotal(it),0);
+                const roomTotal=isAcc?room.items.reduce((s,i)=>s+calcRoomAccTotal(i),0):room.items.reduce((s,it)=>s+calcRoomItemTotal(it),0);
                 return (
                   <div key={key} id={"edit-card-"+key} className={`room-card ${isMin?'minimized':''}`} style={{'--room-color':room.color}}>
                     <div className="room-card-header">
@@ -3711,13 +3730,13 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                             <thead><tr><th>Item</th><th>Nos / Qty</th><th>Unit Cost (₹)</th><th>Total (₹)</th><th>Remarks</th><th></th></tr></thead>
                             <tbody>
                               {room.items.map((item,idx)=>(
-                                <tr key={idx} className="item-row">
+                                <tr key={idx} className="item-row" style={item.excluded ? OFF_ROW_STYLE : undefined}>
                                   <td><input className="cell-input" value={item.name} onChange={e=>updateItem('accessories',idx,'name',e.target.value)} /></td>
                                   <td><input type="text" inputMode="numeric" className="cell-input num" value={item.nos} onChange={e=>updateItem('accessories',idx,'nos',+e.target.value)} /></td>
                                   <td><input type="text" inputMode="numeric" className="cell-input num" value={item.unitCost} onChange={e=>updateItem('accessories',idx,'unitCost',+e.target.value)} /></td>
-                                  <td className="total-cell">₹{(item.nos*item.unitCost).toLocaleString('en-IN')}</td>
+                                  <td className="total-cell" style={item.excluded ? { textDecoration: 'line-through' } : undefined}>₹{(item.nos*item.unitCost).toLocaleString('en-IN')}</td>
                                   <td><input className="cell-input" value={item.remarks} onChange={e=>updateItem('accessories',idx,'remarks',e.target.value)} /></td>
-                                  <td><button type="button" className="btn-remove" onClick={()=>removeItem('accessories',idx)}>✕</button></td>
+                                  <td style={{ whiteSpace: 'nowrap' }}><IncludeToggle on={!item.excluded} onChange={v=>updateItem('accessories',idx,'excluded',!v)} /><button type="button" className="btn-remove" onClick={()=>removeItem('accessories',idx)}>✕</button></td>
                                 </tr>
                               ))}
                             </tbody>
@@ -3731,7 +3750,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                               {room.items.map((item,idx)=>{
                                 const isSft = item.type === 'SFT';
                                 return (
-                                <tr key={idx} className="item-row">
+                                <tr key={idx} className="item-row" style={item.excluded ? OFF_ROW_STYLE : undefined}>
                                   <td><input className="cell-input" value={item.name} onChange={e=>updateItem(key,idx,'name',e.target.value)} /></td>
                                   <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.width}    onChange={v=>updateItem(key,idx,'width',v)} />}</td>
                                   <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.height}   onChange={v=>updateItem(key,idx,'height',v)} />}</td>
@@ -3739,9 +3758,9 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                                   <td className="calc-cell">{isSft ? <NumInput className="cell-input num" value={item.sft} onChange={v=>updateItem(key,idx,'sft',v)} placeholder="SFT" /> : (calcItemArea(item)||'—')}</td>
                                   <td><select className="cell-select" value={item.type} onChange={e=>updateItem(key,idx,'type',e.target.value)}>{['BOX','FRAME','PANELLING','GLASS','SFT','FIXED','Wall','PROFILE WITH MIRROR','PROFILE WITH GLASS','DRAWERS','SLIDING KIT'].map(t=><option key={t}>{t}</option>)}</select></td>
                                   <td><NumInput className="cell-input num" value={item.unitCost} onChange={v=>updateItem(key,idx,'unitCost',v)} /></td>
-                                  <td className="total-cell">₹{calcItemTotal(item).toLocaleString('en-IN')}</td>
+                                  <td className="total-cell" style={item.excluded ? { textDecoration: 'line-through' } : undefined}>₹{calcItemTotal(item).toLocaleString('en-IN')}</td>
                                   <td><input className="cell-input" value={item.remarks} onChange={e=>updateItem(key,idx,'remarks',e.target.value)} /></td>
-                                  <td><button type="button" className="btn-remove" onClick={()=>removeItem(key,idx)}>✕</button></td>
+                                  <td style={{ whiteSpace: 'nowrap' }}><IncludeToggle on={!item.excluded} onChange={v=>updateItem(key,idx,'excluded',!v)} /><button type="button" className="btn-remove" onClick={()=>removeItem(key,idx)}>✕</button></td>
                                 </tr>
                                 );
                               })}
@@ -3819,7 +3838,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
               {Object.entries(rooms).map(([key,room])=>(
                 <div key={key} className="summary-item" style={{'--color':room.color}}>
                   <span className="summary-room">{room.label}</span>
-                  <span className="summary-val">₹{room.items.reduce((s,it)=>s+(key==='accessories'?it.nos*it.unitCost:calcItemTotal(it)),0).toLocaleString('en-IN')}</span>
+                  <span className="summary-val">₹{room.items.reduce((s,it)=>s+(key==='accessories'?calcRoomAccTotal(it):calcRoomItemTotal(it)),0).toLocaleString('en-IN')}</span>
                 </div>
               ))}
               {Object.entries(sections).map(([key,sec])=>(
@@ -4168,6 +4187,51 @@ function VersionHistoryModal({ quotation, onClose }) {
   );
 }
 
+/* ══════════════════════════════════════════════════════════════
+   DELETE QUOTATION — confirmation popup (admin)
+   Shows exactly which quotation will be deleted. Resolves true only on
+   "Yes, Delete". Cancel / ✕ / clicking outside / Esc = nothing is deleted.
+══════════════════════════════════════════════════════════════ */
+function confirmQuotationDelete(q = {}) {
+  return new Promise((resolve) => {
+    const esc = (v) => String(v == null ? '' : v).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+    const amt = Number(q.grand_total || 0);
+    const status = q.project_status || 'Unbooked';
+    const isBooked = status === 'Booked' || status === 'Completed';
+    const wrap = document.createElement('div');
+    wrap.setAttribute('data-delete-confirm', '1');
+    wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:20000;display:flex;align-items:center;justify-content:center;padding:16px;font-family:inherit';
+    wrap.innerHTML = `
+      <div role="dialog" aria-modal="true" style="background:#fff;border-radius:16px;width:420px;max-width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3);overflow:hidden">
+        <div style="padding:22px 22px 6px;text-align:center">
+          <div style="width:54px;height:54px;border-radius:50%;background:#FEE2E2;color:#DC2626;font-size:26px;display:flex;align-items:center;justify-content:center;margin:0 auto 12px">🗑</div>
+          <div style="font-size:18px;font-weight:800;color:#1a1a1a">Delete this quotation?</div>
+          <div style="font-size:13px;color:#6B7280;margin-top:6px">This will permanently delete the quotation. It cannot be undone.</div>
+        </div>
+        <div style="margin:14px 22px 0;border:1px solid #F1F1F1;border-radius:10px;background:#FAFAFA;padding:12px 14px;font-size:13px;line-height:1.8;color:#374151">
+          <div><b>Quotation:</b> #${esc(q.id)}</div>
+          ${q.customer_name ? `<div><b>Customer:</b> ${esc(q.customer_name)}</div>` : ''}
+          ${q.site_name ? `<div><b>Project:</b> ${esc(q.site_name)}</div>` : ''}
+          ${amt ? `<div><b>Grand total:</b> ₹${Math.round(amt).toLocaleString('en-IN')}</div>` : ''}
+          <div><b>Status:</b> ${esc(status)}</div>
+        </div>
+        ${isBooked ? `<div style="margin:10px 22px 0;padding:9px 12px;border-radius:8px;background:#FEF2F2;border:1px solid #FECACA;color:#B91C1C;font-size:12.5px;font-weight:700">⚠ This project is ${esc(status)}. Make sure you really want to delete it.</div>` : ''}
+        <div style="display:flex;gap:10px;padding:18px 22px 22px">
+          <button type="button" data-act="cancel" style="flex:1;padding:11px;border-radius:9px;border:1.5px solid #D1D5DB;background:#fff;color:#374151;font-size:14px;font-weight:700;cursor:pointer">Cancel</button>
+          <button type="button" data-act="ok" style="flex:1;padding:11px;border-radius:9px;border:none;background:#DC2626;color:#fff;font-size:14px;font-weight:700;cursor:pointer">Yes, Delete</button>
+        </div>
+      </div>`;
+    const done = (val) => { document.removeEventListener('keydown', onKey, true); if (wrap.parentNode) wrap.parentNode.removeChild(wrap); resolve(val); };
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+    wrap.addEventListener('mousedown', (e) => { if (e.target === wrap) done(false); });
+    wrap.querySelector('[data-act="cancel"]').addEventListener('click', () => done(false));
+    wrap.querySelector('[data-act="ok"]').addEventListener('click', () => done(true));
+    document.addEventListener('keydown', onKey, true);
+    document.body.appendChild(wrap);
+    setTimeout(() => { try { wrap.querySelector('[data-act="cancel"]').focus(); } catch (_) {} }, 0);
+  });
+}
+
 export default function QuotationList({ user = { role: 'admin' } }) {
   const navigate = useNavigate();
   // Role permissions
@@ -4310,7 +4374,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
       setPaymentQ(res.data.data);
     } catch { toast.error('Failed to load'); }
   };
-  const handleDelete   = async (id) => { if (!canDelete) { toast.error('Only admins can delete quotations'); return; } if (!window.confirm('Delete this quotation?')) return; try { await api.delete(`/quotations/${id}`); toast.success('Deleted'); fetchAll(); } catch (err) { toast.error(err?.response?.data?.message || 'Failed to delete quotation'); } };
+  const handleDelete   = async (id) => { if (!canDelete) { toast.error('Only admins can delete quotations'); return; } if (!(await confirmQuotationDelete(quotations.find(q => q.id === id) || { id }))) return; try { await api.delete(`/quotations/${id}`); toast.success('Deleted'); fetchAll(); } catch (err) { toast.error(err?.response?.data?.message || 'Failed to delete quotation'); } };
   // Admin-only: mark a project as Completed
   const handleComplete = async (id) => {
     if (!isAdmin) { toast.error('Only admins can mark a project Completed'); return; }

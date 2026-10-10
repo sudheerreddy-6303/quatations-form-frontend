@@ -88,8 +88,8 @@ function tableSection(label, items, isAccessory, color='#E8471C', bg='#FFF0EC') 
   if (!items || !items.length) return '';
   if (!sectionHasValues(items, isAccessory)) return '';   // hide untouched/empty sections
   const total = isAccessory
-    ? items.reduce((s,it) => s + (it.nos * it.unitCost), 0)
-    : items.reduce((s,it) => s + calcTotal(it), 0);
+    ? items.reduce((s,it) => s + (it.excluded ? 0 : it.nos * it.unitCost), 0)
+    : items.reduce((s,it) => s + (it.excluded ? 0 : calcTotal(it)), 0); // OFF rows not counted
 
   const header = isAccessory
     ? `<th style="width:38%;text-align:left">ITEM</th>
@@ -111,16 +111,20 @@ function tableSection(label, items, isAccessory, color='#E8471C', bg='#FFF0EC') 
     const area = calcArea(it);
     const tot  = calcTotal(it);
     const bg2  = i % 2 === 1 ? '#FAFAFA' : '#fff';
+    // OFF rows: greyed, amount struck through, marked "Not included"
+    const offTr  = it.excluded ? ';opacity:.5;background:#F3F4F6' : '';
+    const offAmt = it.excluded ? ';text-decoration:line-through;color:#9CA3AF' : '';
+    const offTag = it.excluded ? '<b style="color:#6B7280">Not included</b>' + (it.remarks ? ' · ' : '') : '';
     if (isAccessory) {
-      return `<tr style="background:${bg2}">
+      return `<tr style="background:${bg2}${offTr}">
         <td>${it.name||''}</td>
         <td style="text-align:center">${it.nos||0}</td>
         <td style="text-align:right">${(it.unitCost||0).toLocaleString('en-IN')}</td>
-        <td style="text-align:right;color:#E8471C;font-weight:700">${(it.nos*it.unitCost).toLocaleString('en-IN')}</td>
-        <td>${it.remarks||''}</td>
+        <td style="text-align:right;color:#E8471C;font-weight:700${offAmt}">${(it.nos*it.unitCost).toLocaleString('en-IN')}</td>
+        <td>${offTag}${it.remarks||''}</td>
       </tr>`;
     }
-    return `<tr style="background:${bg2}">
+    return `<tr style="background:${bg2}${offTr}">
       <td>${it.name||''}</td>
       <td style="text-align:center">${it.type!=='FIXED'?(it.width||''):''}</td>
       <td style="text-align:center">${it.type!=='FIXED'?(it.height||''):''}</td>
@@ -128,8 +132,8 @@ function tableSection(label, items, isAccessory, color='#E8471C', bg='#FFF0EC') 
       <td style="text-align:center">${area||'—'}</td>
       <td style="text-align:center">${it.type||''}</td>
       <td style="text-align:right">${(it.unitCost||0).toLocaleString('en-IN')}</td>
-      <td style="text-align:right;color:#E8471C;font-weight:700">${tot.toLocaleString('en-IN')}</td>
-      <td>${it.remarks||''}</td>
+      <td style="text-align:right;color:#E8471C;font-weight:700${offAmt}">${tot.toLocaleString('en-IN')}</td>
+      <td>${offTag}${it.remarks||''}</td>
     </tr>`;
   }).join('');
 
@@ -342,6 +346,23 @@ export function printQuotation(data, transactions=[]) {
   <meta name="referrer" content="no-referrer"/>
   <title>Quotation — ${data.customer_name}</title>
   <style>${commonPageStyles}</style>
+  <script>
+    // LOGO FALLBACK: if the logo can't load from the server, try the same logo link the app's
+    // top bar uses (usually already in the browser cache); if that also fails, show the company name.
+    document.addEventListener('error', function (e) {
+      var img = e.target;
+      if (!img || img.tagName !== 'IMG' || img.className.indexOf('logo-img') === -1) return;
+      if (!img.getAttribute('data-fallback')) {
+        img.setAttribute('data-fallback', '1');
+        img.src = 'https://img1.wsimg.com/isteam/ip/e7e3142b-3f26-4173-bc29-b2315178edb8/DI%20logo%20(2).png/:/rs=w:559,h:192,cg:true,m/cr=w:559,h:192/qt=q:95';
+        return;
+      }
+      var t = document.createElement('div');
+      t.textContent = 'DEERAJ INTERIORS';
+      t.style.cssText = 'font-family:Arial,sans-serif;font-size:20pt;font-weight:800;letter-spacing:2px;color:#E8471C;line-height:48px;';
+      if (img.parentNode) img.parentNode.replaceChild(t, img);
+    }, true);
+  </script>
 </head>
 <body>
 
@@ -407,6 +428,8 @@ export function printQuotation(data, transactions=[]) {
         </div>
       </div>
 
+      <!-- Keep the whole Bank Details box on ONE page when printing -->
+      <div style="page-break-inside:avoid;break-inside:avoid">
       <!-- Bank Details -->
       <div style="margin-top:10px;border:1px solid #E0E0E0;border-radius:4px;padding:8px 12px;line-height:1.5">
         <div style="font-size:9pt;font-weight:bold;color:#1A1A1A;margin-bottom:2px">BANK DETAILS</div>
@@ -414,6 +437,7 @@ export function printQuotation(data, transactions=[]) {
         <div style="font-size:8.5pt;color:#333">Account Number : 4623 0400 0001 80</div>
         <div style="font-size:8.5pt;color:#333">Bank of Baroda &mdash; Kompally Branch</div>
         <div style="font-size:8.5pt;color:#333">IFSC : 500012040</div>
+      </div>
       </div>
 
       <!-- Notes -->

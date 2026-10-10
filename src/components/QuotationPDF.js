@@ -171,8 +171,8 @@ const PAY_TC = [
 function ItemTableSection({ label, items, sno, isAccessory }) {
   if (!items || items.length === 0) return null;
   const total = isAccessory
-    ? items.reduce((s, it) => s + (it.nos * it.unitCost), 0)
-    : items.reduce((s, it) => s + calcTotal(it), 0);
+    ? items.reduce((s, it) => s + (it.excluded ? 0 : it.nos * it.unitCost), 0)
+    : items.reduce((s, it) => s + (it.excluded ? 0 : calcTotal(it)), 0); // OFF rows not counted
 
   return (
     <View wrap={false}>
@@ -205,14 +205,14 @@ function ItemTableSection({ label, items, sno, isAccessory }) {
           )}
         </View>
         {items.map((item, idx) => (
-          <View key={idx} style={[s.tableRow, idx % 2 === 1 && s.tableRowAlt]}>
+          <View key={idx} style={[s.tableRow, idx % 2 === 1 && s.tableRowAlt, item.excluded && { backgroundColor: '#F3F4F6', opacity: 0.5 }]}>
             {isAccessory ? (
               <>
                 <Text style={[s.td, { width: '38%' }]}>{item.name}</Text>
                 <Text style={[s.td, { width: '12%', textAlign: 'center' }]}>{item.nos}</Text>
                 <Text style={[s.td, { width: '20%', textAlign: 'right' }]}>{(item.unitCost || 0).toLocaleString('en-IN')}</Text>
-                <Text style={[s.tdBrand, { width: '14%', textAlign: 'right' }]}>{(item.nos * item.unitCost).toLocaleString('en-IN')}</Text>
-                <Text style={[s.td, { width: '16%', paddingLeft: 3 }]}>{item.remarks}</Text>
+                <Text style={[s.tdBrand, { width: '14%', textAlign: 'right' }, item.excluded && { textDecoration: 'line-through', color: '#9CA3AF' }]}>{(item.nos * item.unitCost).toLocaleString('en-IN')}</Text>
+                <Text style={[s.td, { width: '16%', paddingLeft: 3 }]}>{item.excluded ? 'Not included' + (item.remarks ? ' · ' : '') : ''}{item.remarks}</Text>
               </>
             ) : (
               <>
@@ -223,8 +223,8 @@ function ItemTableSection({ label, items, sno, isAccessory }) {
                 <Text style={[s.td, s.colArea]}>{calcArea(item) || '—'}</Text>
                 <Text style={[s.td, s.colType]}>{item.type}</Text>
                 <Text style={[s.td, s.colRate]}>{(item.unitCost || 0).toLocaleString('en-IN')}</Text>
-                <Text style={[s.tdBrand, s.colTotal]}>{calcTotal(item).toLocaleString('en-IN')}</Text>
-                <Text style={[s.td, s.colRemark]}>{item.remarks || ''}</Text>
+                <Text style={[s.tdBrand, s.colTotal, item.excluded && { textDecoration: 'line-through', color: '#9CA3AF' }]}>{calcTotal(item).toLocaleString('en-IN')}</Text>
+                <Text style={[s.td, s.colRemark]}>{item.excluded ? 'Not included' + (item.remarks ? ' · ' : '') : ''}{item.remarks || ''}</Text>
               </>
             )}
           </View>
@@ -330,6 +330,16 @@ export function QuotationPDF({ data }) {
             <View style={{ flexDirection: 'row', marginBottom: 3 }}>
               <Text style={[s.infoLabel, { width: 55 }]}>Name</Text>
               <Text style={s.infoValue}>{data.customer_name}</Text>
+            </View>
+            {/* Project / Site name (Site Name / Project Name field) */}
+            <View style={{ flexDirection: 'row', marginBottom: 3 }}>
+              <Text style={[s.infoLabel, { width: 55 }]}>Project</Text>
+              <Text style={s.infoValue}>{data.site_name || '—'}</Text>
+            </View>
+            {/* Project Type (2BHK / 3BHK / 4BHK / Villa / Commercial Project / Others) */}
+            <View style={{ flexDirection: 'row', marginBottom: 3 }}>
+              <Text style={[s.infoLabel, { width: 55 }]}>Project Type</Text>
+              <Text style={s.infoValue}>{data.project_type || '—'}</Text>
             </View>
             <View style={{ flexDirection: 'row', marginBottom: 3 }}>
               <Text style={[s.infoLabel, { width: 55 }]}>Phone</Text>
@@ -483,6 +493,8 @@ export function QuotationPDF({ data }) {
           {NOTES.map((n, i) => <Text key={i} style={s.noteText}>{i + 1}.  {n}</Text>)}
         </View>
 
+        {/* Keep the whole Bank Details box on ONE page (moves to next page if it doesn't fit) */}
+        <View wrap={false}>
         {/* Bank Details */}
         <View style={{ marginTop: 10, borderWidth: 0.5, borderColor: C.border, borderRadius: 2, padding: '8 12' }}>
           <Text style={{ fontSize: 8, fontWeight: 'bold', color: C.dark, marginBottom: 2 }}>BANK DETAILS</Text>
@@ -490,6 +502,7 @@ export function QuotationPDF({ data }) {
           <Text style={{ fontSize: 7.5, color: '#444' }}>Account Number : 4623 0400 0001 80</Text>
           <Text style={{ fontSize: 7.5, color: '#444' }}>Bank of Baroda — Kompally Branch</Text>
           <Text style={{ fontSize: 7.5, color: '#444' }}>IFSC : 500012040</Text>
+        </View>
         </View>
 
         {/* Signatures */}

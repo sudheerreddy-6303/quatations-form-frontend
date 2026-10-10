@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
+import { showQuotationSavedPopup } from '../utils/savedPopup';
+import { showMissingFieldsPopup } from '../utils/savedPopup';
 import toast from 'react-hot-toast';
 import { DEFAULT_ROOMS, calcArea, calcTotal, calcRoomTotal } from '../utils/roomData';
 import ProjectManagement from '../components/ProjectManagement';
@@ -132,6 +134,18 @@ function NumInput({ value, onChange, className, placeholder }) {
   );
 }
 
+// ── ROW ON/OFF TOGGLE (room items): OFF = row stays in the quotation but is NOT counted in totals ──
+const IncludeToggle = ({ on, onChange }) => (
+  <button type="button" onClick={() => onChange(!on)}
+    title={on ? 'Included in total — click to exclude this row' : 'NOT included in total — click to include this row'}
+    style={{ width: 34, height: 18, minHeight: 18, maxHeight: 18, flexShrink: 0, borderRadius: 9, border: 'none', padding: 2, cursor: 'pointer', verticalAlign: 'middle',
+      marginRight: 6, display: 'inline-flex', alignItems: 'center', justifyContent: on ? 'flex-end' : 'flex-start',
+      background: on ? '#10B981' : '#D1D5DB', transition: 'all .15s' }}>
+    <span style={{ width: 14, height: 14, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.25)' }} />
+  </button>
+);
+const OFF_ROW_STYLE = { opacity: 0.45, background: '#F3F4F6' };
+
 function RoomItemTableWithRemove({ items, onUpdate, onRemove }) {
   return (
     <div className="item-table-wrap">
@@ -146,7 +160,7 @@ function RoomItemTableWithRemove({ items, onUpdate, onRemove }) {
           {items.map((item, idx) => {
             const isSft = item.type === 'SFT';
             return (
-            <tr key={idx} className="item-row">
+            <tr key={idx} className="item-row" style={item.excluded ? OFF_ROW_STYLE : undefined}>
               <td><input className="cell-input" value={item.name} onChange={e => onUpdate(idx, 'name', e.target.value)} /></td>
               <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.width}    onChange={v => onUpdate(idx, 'width',    v)} />}</td>
               <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.height}   onChange={v => onUpdate(idx, 'height',   v)} />}</td>
@@ -162,9 +176,9 @@ function RoomItemTableWithRemove({ items, onUpdate, onRemove }) {
                 </select>
               </td>
               <td><NumInput className="cell-input num" value={item.unitCost} onChange={v => onUpdate(idx, 'unitCost', v)} /></td>
-              <td className="total-cell">₹{calcTotal(item).toLocaleString('en-IN')}</td>
+              <td className="total-cell" style={item.excluded ? { textDecoration: 'line-through' } : undefined}>₹{calcTotal(item).toLocaleString('en-IN')}</td>
               <td><input className="cell-input" value={item.remarks} onChange={e => onUpdate(idx, 'remarks', e.target.value)} /></td>
-              <td><button type="button" className="btn-remove" onClick={() => onRemove(idx)}>✕</button></td>
+              <td style={{ whiteSpace: 'nowrap' }}><IncludeToggle on={!item.excluded} onChange={v => onUpdate(idx, 'excluded', !v)} /><button type="button" className="btn-remove" onClick={() => onRemove(idx)}>✕</button></td>
             </tr>
             );
           })}
@@ -694,7 +708,7 @@ export default function QuotationForm({ user }) {
   const roomSftMap = {};
   Object.entries(rooms).forEach(([key, room]) => {
     if (key === 'accessories') { roomSftMap[key] = 0; return; }
-    roomSftMap[key] = parseFloat(room.items.reduce((s, i) => s + calcArea(i), 0).toFixed(2));
+    roomSftMap[key] = parseFloat(room.items.reduce((s, i) => s + (i.excluded ? 0 : calcArea(i)), 0).toFixed(2));
   });
   const totalProjectSft = parseFloat(Object.values(roomSftMap).reduce((s, v) => s + v, 0).toFixed(2));
   const discountAmount = discountAmtInput > 0
@@ -706,6 +720,20 @@ export default function QuotationForm({ user }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    // ── Mandatory fields: Project Type, Full Name, Phone Number, Branch → popup lists what's missing ──
+    const _missing = [];
+    if (!projectType)                       _missing.push('Project Type');
+    if (!String(clientName || '').trim())   _missing.push('Client Full Name');
+    if (!String(clientPhone || '').trim())  _missing.push('Client Phone Number');
+    if (!smBranch)                          _missing.push('Branch');
+    if (_missing.length) {
+      const _targets = { 'Project Type': '.project-type-grid', 'Client Full Name': 'input[placeholder="Mr. Sudharshan"]', 'Client Phone Number': 'input[placeholder="9000700930"]', 'Branch': 'select[data-required-branch]' };
+      showMissingFieldsPopup(_missing, () => {
+        const el = document.querySelector(_targets[_missing[0]]);
+        if (el) { el.scrollIntoView({ behavior: 'smooth', block: 'center' }); if (el.focus) setTimeout(() => el.focus(), 400); }
+      });
+      return;
+    }
     if (!clientName || !clientPhone) { toast.error('Please fill client name and phone number'); return; }
     setLoading(true);
     try {
@@ -743,6 +771,7 @@ export default function QuotationForm({ user }) {
       };
       const res = await api.post(`/quotations`, payload);
       toast.success(`Quotation #${res.data.quotation_id||res.data.id} saved successfully!`);
+      showQuotationSavedPopup({ id: res.data.quotation_id || res.data.id, customer: clientName, site: siteName, total: grandTotal }); // success popup
       localStorage.removeItem('deeraj_draft'); // clear draft after save
       setClientName(''); setClientPhone(''); setClientAltPhone(''); setFullAddress(''); setPincode(''); setVillaNumber(''); setSiteName(''); setLocation(''); setSmName(user && user.role === 'manager' ? user.display : ''); setSmPhone(''); setSmDesignation(''); setSmBranch(''); setProjectStartDate(''); setProjectEndDate(''); setProjectType(''); setFloorPlan(null); setPlan2D(null); setPlan3D(null); setTcItems([...DEFAULT_TC]); setNoteItems([...DEFAULT_NOTES]); setPayStages(DEFAULT_PAY_STAGES.map(s => ({ ...s })));
       setRooms(() => { const r = {}; Object.entries(DEFAULT_ROOMS).forEach(([k, v]) => { r[k] = { ...v, items: v.items.map(i => ({ ...i, width:0, height:0, nos:0, unitCost:0, remarks:'' })), pdfFile: null, pdfName: '' }; }); return r; });
@@ -866,7 +895,7 @@ export default function QuotationForm({ user }) {
         </div>
       )}
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} noValidate /* popup lists all missing fields instead of the browser bubble */>
 
         {/* PROJECT TYPE */}
         <section className="form-section fade-up-delay">
@@ -875,6 +904,7 @@ export default function QuotationForm({ user }) {
               <span className="section-badge project-badge">🏗️ Project</span>
               <span className="section-num">01</span>
               Project Type
+              <span className="req" style={{ color: '#E8471C', marginLeft: 6 }}>*</span>
             </h2>
           </div>
           <div className="project-type-grid">
@@ -989,8 +1019,8 @@ export default function QuotationForm({ user }) {
               <input className="field-input" placeholder="e.g. Site Manager" value={smDesignation} onChange={e => setSmDesignation(e.target.value)} />
             </div>
             <div className="field-group">
-              <label className="field-label">Branch</label>
-              <select className="field-input field-select" value={smBranch} onChange={e => setSmBranch(e.target.value)}>
+              <label className="field-label">Branch <span className="req">*</span></label>
+              <select className="field-input field-select" data-required-branch="1" value={smBranch} onChange={e => setSmBranch(e.target.value)}>
                 <option value="">— Select Branch —</option>
                 {['Kompally','Medchal','Gachibowli','Bheemavaram'].map(b => (
                   <option key={b} value={b}>{b}</option>
@@ -1120,7 +1150,7 @@ export default function QuotationForm({ user }) {
               const isMin = !!minimized[key];
               const isAcc = key === 'accessories';
               const roomTotal = isAcc
-                ? room.items.reduce((s, i) => s + i.nos * i.unitCost, 0)
+                ? room.items.reduce((s, i) => s + (i.excluded ? 0 : i.nos * i.unitCost), 0)
                 : calcRoomTotal(room.items);
               return (
                 <div key={key} id={"room-card-" + key} className={`room-card ${isMin ? 'minimized' : ''}`} style={{ '--room-color': room.color }}>
@@ -1176,13 +1206,13 @@ export default function QuotationForm({ user }) {
                           </thead>
                           <tbody>
                             {room.items.map((item, idx) => (
-                              <tr key={idx} className="item-row">
+                              <tr key={idx} className="item-row" style={item.excluded ? OFF_ROW_STYLE : undefined}>
                                 <td><input className="cell-input" value={item.name} onChange={e => updateItem('accessories', idx, 'name', e.target.value)} /></td>
                                 <td><input type="text" inputMode="numeric" className="cell-input num" value={item.nos} onChange={e => updateItem('accessories', idx, 'nos', parseFloat(e.target.value)||0)} /></td>
                                 <td><input type="text" inputMode="numeric" className="cell-input num" value={item.unitCost} onChange={e => updateItem('accessories', idx, 'unitCost', parseFloat(e.target.value)||0)} /></td>
-                                <td className="total-cell">₹{(item.nos * item.unitCost).toLocaleString('en-IN')}</td>
+                                <td className="total-cell" style={item.excluded ? { textDecoration: 'line-through' } : undefined}>₹{(item.nos * item.unitCost).toLocaleString('en-IN')}</td>
                                 <td><input className="cell-input" value={item.remarks} onChange={e => updateItem('accessories', idx, 'remarks', e.target.value)} /></td>
-                                <td><button type="button" className="btn-remove" onClick={() => removeItem('accessories', idx)}>✕</button></td>
+                                <td style={{ whiteSpace: 'nowrap' }}><IncludeToggle on={!item.excluded} onChange={v => updateItem('accessories', idx, 'excluded', !v)} /><button type="button" className="btn-remove" onClick={() => removeItem('accessories', idx)}>✕</button></td>
                               </tr>
                             ))}
                           </tbody>
