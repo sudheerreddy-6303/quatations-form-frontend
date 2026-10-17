@@ -153,7 +153,7 @@ function RoomItemTableWithRemove({ items, onUpdate, onRemove }) {
         <thead>
           <tr>
             <th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th>
-            <th>Area sft</th><th>Type</th><th>Rate (₹)</th><th>Total (₹)</th><th>Remarks</th><th></th>
+            <th>Area sft</th><th>Type</th><th>Rate (₹)</th><th className="disc-th">Discounted Rate (₹)</th>{/* ADDED */}<th className="tp-th">Total Price (₹)</th><th>Discounted Price (₹)</th>{/* CHANGED: Total → Discounted Price; ADDED Total Price */}<th>Remarks</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -176,7 +176,20 @@ function RoomItemTableWithRemove({ items, onUpdate, onRemove }) {
                 </select>
               </td>
               <td><NumInput className="cell-input num" value={item.unitCost} onChange={v => onUpdate(idx, 'unitCost', v)} /></td>
+              {/* ADDED: Discounted Rate — when entered, Total = Area × Discounted Rate (Rate shows struck through) */}
+              <td className={'disc-cell' + ((parseFloat(item.discRate) || 0) > 0 ? ' disc-on' : '')}>
+                <NumInput className="cell-input num disc-input" value={item.discRate || 0} onChange={v => onUpdate(idx, 'discRate', v)} placeholder="—" />
+                {(parseFloat(item.discRate) || 0) > 0 && (parseFloat(item.unitCost) || 0) > (parseFloat(item.discRate) || 0) && (
+                  <span className="disc-save">save ₹{((parseFloat(item.unitCost) || 0) - (parseFloat(item.discRate) || 0)).toLocaleString('en-IN')}</span>)}
+              </td>
+              {/* ADDED: Total Price = Area × Rate (before discount) */}
+              <td className={'tp-cell' + ((parseFloat(item.discRate) || 0) > 0 ? ' tp-struck' : '') + (item.excluded ? ' tp-off' : '')}>₹{calcTotal({ ...item, discRate: 0 }).toLocaleString('en-IN')}
+                {(parseFloat(item.discRate) || 0) > 0 && calcTotal({ ...item, discRate: 0 }) > calcTotal(item) && <span className="tp-save">save ₹{(Math.round((calcTotal({ ...item, discRate: 0 }) - calcTotal(item)) * 100) / 100).toLocaleString('en-IN')}</span>}
+              </td>
+              {/* ADDED: Discounted Price — existing Total cell shown when a Discounted Rate is entered, otherwise “—” (row still counted in totals) */}
+              {(true || (parseFloat(item.discRate) || 0) > 0) ? ( /* CHANGED per request: always show the price here (actual price when no discount); the “—” option below is kept but inactive */
               <td className="total-cell" style={item.excluded ? { textDecoration: 'line-through' } : undefined}>₹{calcTotal(item).toLocaleString('en-IN')}</td>
+              ) : <td className="total-cell" style={item.excluded ? { textDecoration: 'line-through' } : undefined}>₹{calcTotal(item).toLocaleString('en-IN')}</td>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
               <td><input className="cell-input" value={item.remarks} onChange={e => onUpdate(idx, 'remarks', e.target.value)} /></td>
               <td style={{ whiteSpace: 'nowrap' }}><IncludeToggle on={!item.excluded} onChange={v => onUpdate(idx, 'excluded', !v)} /><button type="button" className="btn-remove" onClick={() => onRemove(idx)}>✕</button></td>
             </tr>
@@ -195,7 +208,7 @@ function SectionTable({ items, onUpdate, onRemove }) {
         <thead>
           <tr>
             <th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th>
-            <th>Area sft</th><th>Type</th><th>Rate (₹)</th><th>Total (₹)</th><th>Remarks</th><th></th>
+            <th>Area sft</th><th>Type</th><th>Rate (₹)</th><th className="disc-th">Discounted Rate (₹)</th>{/* ADDED */}<th className="tp-th">Total Price (₹)</th><th>Discounted Price (₹)</th>{/* CHANGED: Total → Discounted Price; ADDED Total Price */}<th>Remarks</th><th></th>
           </tr>
         </thead>
         <tbody>
@@ -221,7 +234,20 @@ function SectionTable({ items, onUpdate, onRemove }) {
                   </select>
                 </td>
                 <td><NumInput className="cell-input num" value={item.unitCost} onChange={v => onUpdate(idx, 'unitCost', v)} placeholder="Rate" /></td>
+                {/* ADDED: Discounted Rate — when entered, Total = Area × Discounted Rate (Rate shows struck through) */}
+                <td className={'disc-cell' + ((parseFloat(item.discRate) || 0) > 0 ? ' disc-on' : '')}>
+                  <NumInput className="cell-input num disc-input" value={item.discRate || 0} onChange={v => onUpdate(idx, 'discRate', v)} placeholder="—" />
+                  {(parseFloat(item.discRate) || 0) > 0 && (parseFloat(item.unitCost) || 0) > (parseFloat(item.discRate) || 0) && (
+                    <span className="disc-save">save ₹{((parseFloat(item.unitCost) || 0) - (parseFloat(item.discRate) || 0)).toLocaleString('en-IN')}</span>)}
+                </td>
+                {/* ADDED: Total Price = Area × Rate (before discount) */}
+                <td className={'tp-cell' + ((parseFloat(item.discRate) || 0) > 0 ? ' tp-struck' : '') + (item.excluded ? ' tp-off' : '')}>₹{calcTotal({ ...item, discRate: 0 }).toLocaleString('en-IN')}
+                  {(parseFloat(item.discRate) || 0) > 0 && calcTotal({ ...item, discRate: 0 }) > total && <span className="tp-save">save ₹{(Math.round((calcTotal({ ...item, discRate: 0 }) - total) * 100) / 100).toLocaleString('en-IN')}</span>}
+                </td>
+                {/* ADDED: Discounted Price — existing Total cell shown when a Discounted Rate is entered, otherwise “—” (row still counted in totals) */}
+                {(true || (parseFloat(item.discRate) || 0) > 0) ? ( /* CHANGED per request: always show the price here (actual price when no discount); the “—” option below is kept but inactive */
                 <td className="total-cell">₹{total.toLocaleString('en-IN')}</td>
+                ) : <td className="total-cell">₹{total.toLocaleString('en-IN')}</td>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
                 <td><input className="cell-input" value={item.remarks} onChange={e => onUpdate(idx, 'remarks', e.target.value)} /></td>
                 <td><button type="button" className="btn-remove" onClick={() => onRemove(idx)}>✕</button></td>
               </tr>
@@ -717,6 +743,19 @@ export default function QuotationForm({ user }) {
   const afterDiscount  = subtotal - discountAmount;
   const gstAmount      = Math.round(afterDiscount * gstPercent / 100);
   const grandTotal     = afterDiscount + gstAmount;
+  // ── ADDED: total of all row discounts (Rate − Discounted Rate) — DISPLAY ONLY ──
+  // Shown in the Discount field. Subtotal / discount / GST / Grand Total calculations above are NOT changed.
+  const _rowDisc = (it) => ((parseFloat(it && it.discRate) || 0) > 0 && !(it && it.excluded)) ? (calcTotal({ ...it, discRate: 0 }) - calcTotal(it)) : 0;
+  const rateDiscountTotal = Math.round((
+    Object.entries(rooms).reduce((s, [k, r]) => s + (k === 'accessories' ? 0 : ((r && r.items) || []).reduce((ss, it) => ss + _rowDisc(it), 0)), 0) +
+    Object.values(sections).reduce((s, sec) => s + ((sec && sec.items) || []).reduce((ss, it) => ss + _rowDisc(it), 0), 0)
+  ) * 100) / 100;
+  const showRateDisc  = rateDiscountTotal > 0;
+  const grossSubtotal = subtotal + rateDiscountTotal; // subtotal at full Rate (before row discounts)
+  // ADDED: discount % (auto) — row savings ÷ Subtotal (at Rate); display only
+  const _discPct      = (v) => grossSubtotal > 0 ? +((v / grossSubtotal) * 100).toFixed(2) : 0;
+  const rateDiscPct   = _discPct(rateDiscountTotal);
+  const totalDiscPct  = _discPct(rateDiscountTotal + discountAmount);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -1363,9 +1402,15 @@ export default function QuotationForm({ user }) {
           </div>
 
           <div className="totals-block">
+            {!showRateDisc && (
             <div className="total-row subtotal-row">
               <span>Subtotal</span><span>₹{subtotal.toLocaleString('en-IN')}</span>
             </div>
+            )}
+            {/* ADDED: when row discounts exist, Subtotal is shown at full Rate (row discounts appear in Discount below) */}
+            {showRateDisc && (
+              <div className="total-row subtotal-row"><span>Subtotal <span className="gst-incl-note">(at Rate)</span></span><span>₹{grossSubtotal.toLocaleString('en-IN')}</span></div>
+            )}
             <div className="total-row sft-total-row">
               <span>📐 Total SFT</span><span>{totalProjectSft.toLocaleString('en-IN')} SFT</span>
             </div>
@@ -1381,8 +1426,22 @@ export default function QuotationForm({ user }) {
                   <input type="text" inputMode="numeric" className="gst-input" value={discountAmtInput > 0 ? discountAmtInput : (discountPercent > 0 ? discountAmount : '')} min="0" onChange={e => { setDiscountAmtInput(parseFloat(e.target.value)||0); setDiscountPercent(0); }} placeholder="0" />
                 </div>
               </span>
+              {!showRateDisc && (
               <span className="gst-amount-val" style={{color:'#10B981'}}>- ₹{discountAmount.toLocaleString('en-IN')}</span>
+              )}
+              {showRateDisc && <span className="gst-amount-val" style={{color:'#10B981'}}>- ₹{(rateDiscountTotal + discountAmount).toLocaleString('en-IN')}</span>}{/* ADDED: row discounts + extra discount */}
             </div>
+            {/* ADDED: breakdown of the Discount amount */}
+            {showRateDisc && (
+              <div className="total-row" style={{ fontSize: 12, color: '#047857', paddingTop: 0 }}>
+                <span>↳ Discounted Rate savings ₹{rateDiscountTotal.toLocaleString('en-IN')} ({rateDiscPct}%){discountAmount > 0 ? ` + Extra discount ₹${discountAmount.toLocaleString('en-IN')}` : ''}</span><span style={{ fontWeight: 700 }}>Total discount {totalDiscPct}%</span>
+              </div>
+            )}
+            {showRateDisc && discountAmount === 0 && (
+              <div className="total-row" style={{opacity:0.75}}>
+                <span>After Discount</span><span>₹{afterDiscount.toLocaleString('en-IN')}</span>
+              </div>
+            )}
             {discountAmount > 0 && (
               <div className="total-row" style={{opacity:0.75}}>
                 <span>After Discount</span><span>₹{afterDiscount.toLocaleString('en-IN')}</span>

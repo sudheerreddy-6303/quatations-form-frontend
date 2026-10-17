@@ -240,6 +240,7 @@ function QuotationItems({ quotation }) {
               <span>{room.label || key}</span>
               <span style={{color:'#E8471C',fontFamily:'monospace'}}>
                 ₹{fmt(room.items.reduce((s,it) => {
+                  if (key!=='accessories') { if ((parseFloat(it.discRate)||0) > 0) it = { ...it, origRate: it.unitCost, unitCost: parseFloat(it.discRate) }; /* ADDED: Discounted Rate → totals use it */ }
                   if (key==='accessories') return s + (it.nos||0)*(it.unitCost||0);
                   const w=parseFloat(it.width)||0, h=parseFloat(it.height)||0, n=parseFloat(it.nos)||0;
                   if (it.type==='FIXED') return s + (it.unitCost||0)*(n||1);
@@ -253,12 +254,13 @@ function QuotationItems({ quotation }) {
                 <tr style={{background:'#fafafa'}}>
                   {key==='accessories'
                     ? ['Item','Nos','Unit Cost','Total'].map(h => <th key={h} style={TH}>{h}</th>)
-                    : ['Item','W','H','Nos','SFT','Type','Rate','Total'].map(h => <th key={h} style={TH}>{h}</th>)
+                    : ['Item','W','H','Nos','SFT','Type','Rate','Disc. Rate','Total Price','Disc. Price'].map(h => <th key={h} style={TH}>{h}</th>) /* CHANGED: added 'Disc. Rate', Total → Total Price + Disc. Price */
                   }
                 </tr>
               </thead>
               <tbody>
                 {room.items.map((it, i) => {
+                  if (key!=='accessories') { if ((parseFloat(it.discRate)||0) > 0) it = { ...it, origRate: it.unitCost, unitCost: parseFloat(it.discRate) }; /* ADDED: Discounted Rate → totals use it */ }
                   const w=parseFloat(it.width)||0, h=parseFloat(it.height)||0, n=parseFloat(it.nos)||0;
                   let area=0, total=0;
                   if (key==='accessories') {
@@ -284,8 +286,13 @@ function QuotationItems({ quotation }) {
                         <td style={{...TD,textAlign:'center'}}>{it.nos}</td>
                         <td style={{...TD,textAlign:'center',color:'#E8471C'}}>{area||'—'}</td>
                         <td style={{...TD,textAlign:'center',fontSize:10}}>{it.type}</td>
-                        <td style={{...TD,textAlign:'right'}}>₹{fmt(it.unitCost)}</td>
+                        {false && <td style={{...TD,textAlign:'right'}}>₹{fmt(it.unitCost)}</td>}{/* CHANGED (deactivated): shows original Rate + Disc. Rate below */}
+                        <td style={{...TD,textAlign:'right',...(it.origRate!==undefined?{textDecoration:'line-through',color:'#9CA3AF'}:{})}}>₹{fmt(it.origRate!==undefined?it.origRate:it.unitCost)}</td>
+                        <td style={{...TD,textAlign:'right',color:'#047857',fontWeight:700}}>{it.origRate!==undefined?'₹'+fmt(it.unitCost):'—'}</td>
+                        <td style={{...TD,textAlign:'right',fontWeight:700,color:'#1E3A8A',...(it.origRate!==undefined?{textDecoration:'line-through',color:'#9CA3AF'}:{})}}>₹{fmt((it.origRate!==undefined && it.unitCost ? Math.round(total*it.origRate/it.unitCost*100)/100 : total))}</td>{/* ADDED: Total Price */}
+                        {(true || it.origRate!==undefined) ? ( /* CHANGED per request: always show the price here (actual price when no discount); the “—” option below is kept but inactive */
                         <td style={{...TD,textAlign:'right',fontWeight:700,color:'#E8471C'}}>₹{fmt(total)}</td>
+                        ) : <td style={{...TD,textAlign:'right',fontWeight:700,color:'#E8471C'}}>₹{fmt(total)}</td>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
                       </>}
                     </tr>
                   );
@@ -304,10 +311,11 @@ function QuotationItems({ quotation }) {
           </div>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
             <thead><tr style={{background:'#fafafa'}}>
-              {['Item','W','H','Nos','SFT','Type','Rate','Total'].map(h=><th key={h} style={TH}>{h}</th>)}
+              {['Item','W','H','Nos','SFT','Type','Rate','Disc. Rate','Total Price','Disc. Price'].map(h=><th key={h} style={TH}>{h}</th>) /* CHANGED: added 'Disc. Rate', Total → Total Price + Disc. Price */}
             </tr></thead>
             <tbody>
               {sec.items.map((it,i)=>{
+                if ((parseFloat(it.discRate)||0) > 0) it = { ...it, origRate: it.unitCost, unitCost: parseFloat(it.discRate) }; // ADDED: Discounted Rate → totals use it
                 const w=parseFloat(it.width)||0, h=parseFloat(it.height)||0, n=parseFloat(it.nos)||0;
                 let area=0, total=0;
                 if (it.type==='FIXED') { total=(it.unitCost||0)*(n||1); }
@@ -321,8 +329,13 @@ function QuotationItems({ quotation }) {
                     <td style={{...TD,textAlign:'center'}}>{it.nos}</td>
                     <td style={{...TD,textAlign:'center',color:'#7c3aed'}}>{area||'—'}</td>
                     <td style={{...TD,textAlign:'center',fontSize:10}}>{it.type}</td>
-                    <td style={{...TD,textAlign:'right'}}>₹{fmt(it.unitCost)}</td>
+                    {false && <td style={{...TD,textAlign:'right'}}>₹{fmt(it.unitCost)}</td>}{/* CHANGED (deactivated): shows original Rate + Disc. Rate below */}
+                    <td style={{...TD,textAlign:'right',...(it.origRate!==undefined?{textDecoration:'line-through',color:'#9CA3AF'}:{})}}>₹{fmt(it.origRate!==undefined?it.origRate:it.unitCost)}</td>
+                    <td style={{...TD,textAlign:'right',color:'#047857',fontWeight:700}}>{it.origRate!==undefined?'₹'+fmt(it.unitCost):'—'}</td>
+                    <td style={{...TD,textAlign:'right',fontWeight:700,color:'#1E3A8A',...(it.origRate!==undefined?{textDecoration:'line-through',color:'#9CA3AF'}:{})}}>₹{fmt((it.origRate!==undefined && it.unitCost ? Math.round(total*it.origRate/it.unitCost*100)/100 : total))}</td>{/* ADDED: Total Price */}
+                    {(true || it.origRate!==undefined) ? ( /* CHANGED per request: always show the price here (actual price when no discount); the “—” option below is kept but inactive */
                     <td style={{...TD,textAlign:'right',fontWeight:700,color:'#7c3aed'}}>₹{fmt(total)}</td>
+                    ) : <td style={{...TD,textAlign:'right',fontWeight:700,color:'#7c3aed'}}>₹{fmt(total)}</td>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
                   </tr>
                 );
               })}

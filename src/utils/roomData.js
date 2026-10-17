@@ -94,6 +94,7 @@ export const calcArea = (item) => {
 };
 
 export const calcTotal = (item) => {
+  if ((parseFloat(item && item.discRate) || 0) > 0 && !(item && item.__discApplied)) return calcTotal({ ...item, unitCost: parseFloat(item.discRate), __discApplied: true }); // ADDED: Discounted Rate — when entered, Total uses it instead of Rate
   const nos      = parseFloat(item.nos);
   const n        = isNaN(nos) ? 0 : nos;
   const unitCost = parseFloat(item.unitCost) || 0;
@@ -118,3 +119,12 @@ export const calcTotal = (item) => {
 };
 
 export const calcRoomTotal = (items) => items.reduce((s, i) => s + (i && i.excluded ? 0 : calcTotal(i)), 0); // OFF rows not counted
+// ── ADDED: total of all row discounts (Rate − Discounted Rate) for a quotation — DISPLAY ONLY ──
+// Used by View / Print / PDF totals to show "Subtotal (at Rate)" and the discount breakdown.
+export const calcRateDiscountTotal = (rooms, sections) => {
+  const one = (it) => ((parseFloat(it && it.discRate) || 0) > 0 && !(it && it.excluded)) ? (calcTotal({ ...it, discRate: 0 }) - calcTotal(it)) : 0;
+  const list = (x) => (x && Array.isArray(x.items)) ? x.items : [];
+  const r = Object.entries(rooms || {}).reduce((s, [k, room]) => s + (k === 'accessories' ? 0 : list(room).reduce((ss, it) => ss + one(it), 0)), 0);
+  const c = Object.values(sections || {}).reduce((s, sec) => s + list(sec).reduce((ss, it) => ss + one(it), 0), 0);
+  return Math.round((r + c) * 100) / 100;
+};

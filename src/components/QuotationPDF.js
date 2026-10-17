@@ -1,6 +1,7 @@
 import React from 'react';
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 import { calcArea, calcTotal, calcRoomTotal } from '../utils/roomData';
+import { calcRateDiscountTotal } from '../utils/roomData'; // ADDED: Discounted Rate totals breakdown
 
 const API_BASE = (process.env.REACT_APP_API_URL || 'http://localhost:5001/api').trim();
 const LOGO_URL = `${API_BASE}/logo.png`;
@@ -58,7 +59,7 @@ const s = StyleSheet.create({
   tdBrand: { fontSize: 7, color: C.brand, fontWeight: 'bold' },
 
   // Room column widths — FIXED to prevent overlap
-  colName:   { width: '26%' },
+  colName:   { width: '16%' }, // CHANGED 26% → 16% to fit Discounted Rate + Total Price
   colW:      { width: '6%',  textAlign: 'center' },
   colH:      { width: '6%',  textAlign: 'center' },
   colNos:    { width: '5%',  textAlign: 'center' },
@@ -66,7 +67,9 @@ const s = StyleSheet.create({
   colType:   { width: '9%',  textAlign: 'center' },
   colRate:   { width: '12%', textAlign: 'right' },
   colTotal:  { width: '13%', textAlign: 'right' },
-  colRemark: { width: '16%', paddingLeft: 3 },
+  colDisc:   { width: '7%',  textAlign: 'right' }, // ADDED: Discounted Rate column
+  colTPrice: { width: '10%', textAlign: 'right' }, // ADDED: Total Price column
+  colRemark: { width: '9%', paddingLeft: 3 }, // CHANGED 16% → 9% to fit Discounted Rate + Total Price
 
   // Totals
   totalInteriorRow: { flexDirection: 'row', justifyContent: 'space-between', backgroundColor: '#FFF0EC', borderRadius: 2, padding: '6 10', marginHorizontal: 16, marginTop: 8 },
@@ -199,7 +202,9 @@ function ItemTableSection({ label, items, sno, isAccessory }) {
               <Text style={[s.th, s.colArea]}>AREA sft</Text>
               <Text style={[s.th, s.colType]}>TYPE</Text>
               <Text style={[s.th, s.colRate]}>RATE(Rs.)</Text>
-              <Text style={[s.th, s.colTotal]}>TOTAL(Rs.)</Text>
+              <Text style={[s.th, s.colDisc]}>DISC. RATE</Text>{/* ADDED */}
+              <Text style={[s.th, s.colTPrice]}>TOTAL PRICE</Text>{/* ADDED */}
+              <Text style={[s.th, s.colTotal]}>DISC. PRICE</Text>{/* CHANGED: TOTAL(Rs.) → DISC. PRICE */}
               <Text style={[s.th, s.colRemark]}>REMARKS</Text>
             </>
           )}
@@ -222,8 +227,14 @@ function ItemTableSection({ label, items, sno, isAccessory }) {
                 <Text style={[s.td, s.colNos]}>{item.nos}</Text>
                 <Text style={[s.td, s.colArea]}>{calcArea(item) || '—'}</Text>
                 <Text style={[s.td, s.colType]}>{item.type}</Text>
-                <Text style={[s.td, s.colRate]}>{(item.unitCost || 0).toLocaleString('en-IN')}</Text>
+                {/* CHANGED (NOT deleted — deactivated): Rate is struck through when a Discounted Rate is used */}
+                {false && <Text style={[s.td, s.colRate]}>{(item.unitCost || 0).toLocaleString('en-IN')}</Text>}
+                <Text style={[s.td, s.colRate, (parseFloat(item.discRate) || 0) > 0 && { textDecoration: 'line-through', color: '#9CA3AF' }]}>{(item.unitCost || 0).toLocaleString('en-IN')}</Text>
+                <Text style={[s.td, s.colDisc, { color: '#047857' }]}>{(parseFloat(item.discRate) || 0) > 0 ? Number(item.discRate).toLocaleString('en-IN') : '—'}</Text>{/* ADDED: Discounted Rate */}
+                <Text style={[s.td, s.colTPrice, { color: '#1E3A8A', fontWeight: 'bold' }, ((parseFloat(item.discRate) || 0) > 0 || item.excluded) && { textDecoration: 'line-through', color: '#9CA3AF' }]}>{calcTotal({ ...item, discRate: 0 }).toLocaleString('en-IN')}</Text>{/* ADDED: Total Price */}
+                {(true || (parseFloat(item.discRate) || 0) > 0) ? ( /* CHANGED per request: always show the price here (actual price when no discount); the “—” option below is kept but inactive */
                 <Text style={[s.tdBrand, s.colTotal, item.excluded && { textDecoration: 'line-through', color: '#9CA3AF' }]}>{calcTotal(item).toLocaleString('en-IN')}</Text>
+                ) : <Text style={[s.tdBrand, s.colTotal, item.excluded && { textDecoration: 'line-through', color: '#9CA3AF' }]}>{calcTotal(item).toLocaleString('en-IN')}</Text>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
                 <Text style={[s.td, s.colRemark]}>{item.excluded ? 'Not included' + (item.remarks ? ' · ' : '') : ''}{item.remarks || ''}</Text>
               </>
             )}
@@ -284,6 +295,14 @@ export function QuotationPDF({ data }) {
   const discountAmount  = Number(data.discount_amount  || 0);
   const afterDiscount   = subtotal - discountAmount;
   const grandTotal    = Number(data.grand_total  || 0) - phantomCeiling;
+  // ADDED: row discounts (Discounted Rate) — display only; stored totals above are unchanged
+  const rateDiscountTotal = calcRateDiscountTotal(rooms, sections);
+  const showRateDisc      = rateDiscountTotal > 0;
+  const grossSubtotal     = subtotal + rateDiscountTotal;
+  // ADDED: discount % (auto) — row savings ÷ Subtotal (at Rate); display only
+  const _discPct      = (v) => grossSubtotal > 0 ? +((v / grossSubtotal) * 100).toFixed(2) : 0;
+  const rateDiscPct   = _discPct(rateDiscountTotal);
+  const totalDiscPct  = _discPct(rateDiscountTotal + discountAmount);
 
   let tcItems = data.tc_items;
   if (typeof tcItems === 'string' && tcItems) { try { tcItems = JSON.parse(tcItems); } catch { tcItems = null; } }
@@ -459,6 +478,7 @@ export function QuotationPDF({ data }) {
 
         {/* Subtotal / GST / Grand Total */}
         <View style={[s.tableWrap, { marginTop: 10, borderWidth: 0.5, borderColor: C.border, borderRadius: 2 }]}>
+          {!showRateDisc && (<>
           <View style={s.subtotalRow}>
             <Text style={s.subtotalLabel}>Subtotal</Text>
             <Text style={s.subtotalValue}>{fmt(subtotal)}</Text>
@@ -475,6 +495,25 @@ export function QuotationPDF({ data }) {
               <Text style={s.subtotalValue}>{fmt(afterDiscount)}</Text>
             </View>
           )}
+          </>)}
+          {/* ADDED: with Discounted Rates — Subtotal at Rate, all discounts in the Discount row */}
+          {showRateDisc && (<>
+          <View style={s.subtotalRow}>
+            <Text style={s.subtotalLabel}>Subtotal (at Rate)</Text>
+            <Text style={s.subtotalValue}>{fmt(grossSubtotal)}</Text>
+          </View>
+          <View style={[s.subtotalRow, { backgroundColor: '#F0FDF4' }]}>
+            <View>
+              <Text style={[s.subtotalLabel, { color: '#065F46', fontWeight: 'bold' }]}>Discount  <Text style={{ backgroundColor: '#065F46', color: '#FFFFFF' }}> {totalDiscPct}% </Text>{discountPercent > 0 ? ` (${discountPercent}% extra)` : ''}</Text>
+              <Text style={[s.subtotalLabel, { color: '#065F46', fontSize: 6.5, marginTop: 1 }]}>Discounted Rate savings {fmt(rateDiscountTotal)} ({rateDiscPct}%){discountAmount > 0 ? ` + Extra discount ${discountPercent > 0 ? discountPercent + '% ' : ''}${fmt(discountAmount)}` : ''}</Text>
+            </View>
+            <Text style={[s.subtotalValue, { color: '#065F46' }]}>- {fmt(rateDiscountTotal + discountAmount)}</Text>
+          </View>
+          <View style={s.subtotalRow}>
+            <Text style={s.subtotalLabel}>After Discount</Text>
+            <Text style={s.subtotalValue}>{fmt(afterDiscount)}</Text>
+          </View>
+          </>)}
           {gstPercent > 0 && (
             <View style={s.gstRow}>
               <Text style={s.gstLabel}>GST ({gstPercent}%)</Text>

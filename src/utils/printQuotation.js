@@ -2,6 +2,8 @@
 // Generates a browser-printable HTML window from quotation data
 // Uses the EXACT same layout as the ViewModal, plus watermark
 
+import { calcRateDiscountTotal } from './roomData'; // ADDED: Discounted Rate totals breakdown
+
 const API_BASE = (process.env.REACT_APP_API_URL || 'http://localhost:5001/api').trim();
 const LOGO_URL = `${API_BASE}/logo.png`;
 
@@ -20,6 +22,7 @@ function calcArea(item) {
   return parseFloat(((item.width * item.height * item.nos) / 144).toFixed(1));
 }
 function calcTotal(item) {
+  if ((parseFloat(item && item.discRate) || 0) > 0 && !(item && item.__discApplied)) return calcTotal({ ...item, unitCost: parseFloat(item.discRate), __discApplied: true }); // ADDED: Discounted Rate — when entered, Total uses it instead of Rate
   if (item.type === 'FIXED') return (item.unitCost || 0) * (item.nos || 1);
   if (!item.width && !item.height) return item.nos * item.unitCost;
   return Math.round(calcArea(item) * item.unitCost);
@@ -97,15 +100,17 @@ function tableSection(label, items, isAccessory, color='#E8471C', bg='#FFF0EC') 
        <th style="width:20%;text-align:right">UNIT COST (Rs.)</th>
        <th style="width:14%;text-align:right">TOTAL (Rs.)</th>
        <th style="width:16%;text-align:left">REMARKS</th>`
-    : `<th style="width:26%;text-align:left">PARTICULARS</th>
+    : `<th style="width:16%;text-align:left">PARTICULARS</th><!-- CHANGED width 26% → 16% to fit Discounted Rate + Total Price -->
        <th style="width:6%;text-align:center">W(in)</th>
        <th style="width:6%;text-align:center">H(in)</th>
        <th style="width:5%;text-align:center">NOS</th>
        <th style="width:7%;text-align:center">AREA sft</th>
        <th style="width:9%;text-align:center">TYPE</th>
        <th style="width:12%;text-align:right">RATE(Rs.)</th>
-       <th style="width:13%;text-align:right">TOTAL(Rs.)</th>
-       <th style="width:16%;text-align:left">REMARKS</th>`;
+       <th style="width:7%;text-align:right">DISC.<br>RATE</th><!-- ADDED: Discounted Rate -->
+       <th style="width:10%;text-align:right">TOTAL<br>PRICE</th><!-- ADDED: Total Price (Area × Rate) -->
+       <th style="width:13%;text-align:right">DISC.<br>PRICE</th><!-- CHANGED: TOTAL(Rs.) → DISC. PRICE -->
+       <th style="width:9%;text-align:left">REMARKS</th><!-- CHANGED width 16% → 9% to fit new columns -->`;
 
   const rows = items.map((it, i) => {
     const area = calcArea(it);
@@ -132,12 +137,17 @@ function tableSection(label, items, isAccessory, color='#E8471C', bg='#FFF0EC') 
       <td style="text-align:center">${area||'—'}</td>
       <td style="text-align:center">${it.type||''}</td>
       <td style="text-align:right">${(it.unitCost||0).toLocaleString('en-IN')}</td>
+      <td class="${(parseFloat(it.discRate)||0) > 0 ? 'dr-on' : ''}" style="text-align:right;color:#047857;font-weight:700">${(parseFloat(it.discRate)||0) > 0 ? Number(it.discRate).toLocaleString('en-IN') : '—'}</td>
+      <td style="text-align:right;font-weight:700;${(parseFloat(it.discRate)||0) > 0 ? 'color:#9CA3AF;text-decoration:line-through' : 'color:#1E3A8A'}${offAmt}">${calcTotal({ ...it, discRate: 0 }).toLocaleString('en-IN')}</td><!-- ADDED: Total Price -->
+      ${(true || (parseFloat(it.discRate)||0) > 0) /* CHANGED per request: always show the price (actual price when no discount) */ ? `
       <td style="text-align:right;color:#E8471C;font-weight:700${offAmt}">${tot.toLocaleString('en-IN')}</td>
+      ` : `<td style="text-align:right;color:#E8471C;font-weight:700${offAmt}">${tot.toLocaleString('en-IN')}</td>`}<!-- CHANGED per request: no Discounted Rate → actual price (was “—”) -->
       <td>${offTag}${it.remarks||''}</td>
     </tr>`;
   }).join('');
 
   return `
+    <style>/* ADDED: Rate struck through when a Discounted Rate is used */ tr:has(> td.dr-on) > td:nth-child(7){text-decoration:line-through;color:#9CA3AF}</style>
     <div class="section-label-bar" style="border-left:3px solid ${color};background:${bg}">
       <span style="font-weight:700;font-size:9pt;color:#1A1A1A;letter-spacing:0.3px">${label.toUpperCase()}</span>
       <span style="font-weight:700;font-size:9pt;color:${color}">${fmtINR(total)}</span>
@@ -192,6 +202,14 @@ export function printQuotation(data, transactions=[]) {
   const discountAmount  = Number(data.discount_amount ||0);
   const afterDiscount   = subtotal - discountAmount;
   const grandTotal    = Number(data.grand_total ||0) - phantomCeiling;
+  // ADDED: row discounts (Discounted Rate) — display only; stored totals above are unchanged
+  const rateDiscountTotal = calcRateDiscountTotal(rooms, sections);
+  const showRateDisc      = rateDiscountTotal > 0;
+  const grossSubtotal     = subtotal + rateDiscountTotal;
+  // ADDED: discount % (auto) — row savings ÷ Subtotal (at Rate); display only
+  const _discPct      = (v) => grossSubtotal > 0 ? +((v / grossSubtotal) * 100).toFixed(2) : 0;
+  const rateDiscPct   = _discPct(rateDiscountTotal);
+  const totalDiscPct  = _discPct(rateDiscountTotal + discountAmount);
 
   const smName   = data.site_manager_name || '';
   const smDesig  = data.site_manager_designation || 'Site Manager';
@@ -418,9 +436,16 @@ export function printQuotation(data, transactions=[]) {
 
       <!-- Totals -->
       <div class="totals-block">
+        ${!showRateDisc ? `
         <div class="totals-row subtotal-row"><span>Subtotal</span><span>${fmtINR(subtotal)}</span></div>
         ${discountAmount>0?`<div class="totals-row" style="background:#F0FDF4;border-bottom:1px solid #E0E0E0;color:#065F46;font-weight:600"><span>Discount${discountPercent>0?' ('+discountPercent+'%)':''}</span><span>- ${fmtINR(discountAmount)}</span></div>`:''}
         ${discountAmount>0?`<div class="totals-row subtotal-row"><span>After Discount</span><span>${fmtINR(afterDiscount)}</span></div>`:''}
+        ` : `
+        <!-- ADDED: with Discounted Rates — Subtotal at Rate, all discounts in the Discount row -->
+        <div class="totals-row subtotal-row"><span>Subtotal (at Rate)</span><span>${fmtINR(grossSubtotal)}</span></div>
+        <div class="totals-row" style="background:#F0FDF4;border-bottom:1px solid #E0E0E0;color:#065F46;font-weight:600"><span>Discount <span style="display:inline-block;background:#065F46;color:#fff;font-size:8pt;font-weight:700;border-radius:8px;padding:0 7px;margin-left:4px">${totalDiscPct}%</span>${discountPercent>0?' ('+discountPercent+'% extra)':''}<br><span style="font-size:8pt;font-weight:500">↳ Discounted Rate savings ${fmtINR(rateDiscountTotal)} (${rateDiscPct}%)${discountAmount>0?' + Extra discount '+(discountPercent>0?discountPercent+'% ':'')+fmtINR(discountAmount):''}</span></span><span>- ${fmtINR(rateDiscountTotal + discountAmount)}</span></div>
+        <div class="totals-row subtotal-row"><span>After Discount</span><span>${fmtINR(afterDiscount)}</span></div>
+        `}
         ${gstPercent>0?`<div class="totals-row gst-row"><span>GST (${gstPercent}%)</span><span>+ ${fmtINR(gstAmount)}</span></div>`:''}
         <div class="totals-row grand-row">
           <span>GRAND TOTAL${gstPercent>0?' (incl. '+gstPercent+'% GST)':''}</span>

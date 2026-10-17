@@ -1495,6 +1495,7 @@ function AdminRequestsPanel({ onClose, onApproved }) {
 import { pdf } from '@react-pdf/renderer';
 import { QuotationPDF } from '../components/QuotationPDF';
 import { DEFAULT_ROOMS, calcArea, calcTotal } from '../utils/roomData';
+import { calcRateDiscountTotal } from '../utils/roomData'; // ADDED: Discounted Rate totals breakdown in View
 import { printQuotation } from '../utils/printQuotation';
 import { showQuotationSavedPopup } from '../utils/savedPopup';
 import ProjectManagement from '../components/ProjectManagement';
@@ -2760,6 +2761,14 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
   const discountAmount   = Number(data.discount_amount  || 0);
   const afterDiscount    = subtotal - discountAmount;
   const gstPercent       = Number(data.gst_percent || 0);
+  // ADDED: row discounts (Discounted Rate) — display only; stored totals above are unchanged
+  const rateDiscountTotal = calcRateDiscountTotal(rooms, sections);
+  const showRateDisc      = rateDiscountTotal > 0;
+  const grossSubtotal     = subtotal + rateDiscountTotal;
+  // ADDED: discount % (auto) — row savings ÷ Subtotal (at Rate); display only
+  const _discPct      = (v) => grossSubtotal > 0 ? +((v / grossSubtotal) * 100).toFixed(2) : 0;
+  const rateDiscPct   = _discPct(rateDiscountTotal);
+  const totalDiscPct  = _discPct(rateDiscountTotal + discountAmount);
   const gstAmount        = Number(data.gst_amount  || 0);
   const grandTotal       = Number(data.grand_total  || 0);
 
@@ -2827,6 +2836,8 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
   const tdBase = { padding:'6px 8px', border:`1px solid ${C.border}`, color:C.dark, verticalAlign:'top', fontSize:10 };
   const tdGold = { ...tdBase, color:C.gold, fontWeight:700 };
   const COL = { name:'26%', w:'6%', h:'6%', nos:'5%', area:'7%', type:'9%', rate:'12%', total:'13%', remark:'16%' };
+  // ADDED: Discounted Rate column — widths used by the room tables below (Particulars 26→22, Remarks 16→12, Disc 8)
+  const COL2 = { ...COL, name:'16%', disc:'7%', tprice:'10%', remark:'9%' }; // CHANGED: also fits Total Price
 
   const NOTES = (() => {
     const n = Array.isArray(data.note_items) ? data.note_items
@@ -2864,8 +2875,11 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
             </table>
           ) : (
             <table style={{width:'100%',borderCollapse:'collapse',fontSize:10,tableLayout:'fixed'}}>
-              <colgroup><col style={{width:COL.name}}/><col style={{width:COL.w}}/><col style={{width:COL.h}}/><col style={{width:COL.nos}}/><col style={{width:COL.area}}/><col style={{width:COL.type}}/><col style={{width:COL.rate}}/><col style={{width:COL.total}}/><col style={{width:COL.remark}}/></colgroup>
-              <thead><tr>{[['PARTICULARS','left'],['W(in)','center'],['H(in)','center'],['NOS','center'],['AREA sft','center'],['TYPE','center'],['RATE(Rs.)','right'],['TOTAL(Rs.)','right'],['REMARKS','left']].map(([h,a])=><th key={h} style={{...thBase,textAlign:a}}>{h}</th>)}</tr></thead>
+              {/* CHANGED (NOT deleted — deactivated): old columns kept below; new ones add DISC. RATE */}
+              {false && <colgroup><col style={{width:COL.name}}/><col style={{width:COL.w}}/><col style={{width:COL.h}}/><col style={{width:COL.nos}}/><col style={{width:COL.area}}/><col style={{width:COL.type}}/><col style={{width:COL.rate}}/><col style={{width:COL.total}}/><col style={{width:COL.remark}}/></colgroup>}
+              {false && <thead><tr>{[['PARTICULARS','left'],['W(in)','center'],['H(in)','center'],['NOS','center'],['AREA sft','center'],['TYPE','center'],['RATE(Rs.)','right'],['TOTAL(Rs.)','right'],['REMARKS','left']].map(([h,a])=><th key={h} style={{...thBase,textAlign:a}}>{h}</th>)}</tr></thead>}
+              <colgroup><col style={{width:COL2.name}}/><col style={{width:COL2.w}}/><col style={{width:COL2.h}}/><col style={{width:COL2.nos}}/><col style={{width:COL2.area}}/><col style={{width:COL2.type}}/><col style={{width:COL2.rate}}/><col style={{width:COL2.disc}}/><col style={{width:COL2.tprice}}/><col style={{width:COL2.total}}/><col style={{width:COL2.remark}}/></colgroup>
+              <thead><tr>{[['PARTICULARS','left'],['W(in)','center'],['H(in)','center'],['NOS','center'],['AREA sft','center'],['TYPE','center'],['RATE(Rs.)','right'],['DISC. RATE','right'],['TOTAL PRICE','right'],['DISC. PRICE','right'],['REMARKS','left']].map(([h,a])=><th key={h} style={{...thBase,textAlign:a}}>{h}</th>)}</tr></thead>{/* CHANGED: TOTAL → TOTAL PRICE + DISC. PRICE */}
               <tbody>{items.map((it,i)=>{
                 const area=calcItemArea(it); const tot=calcItemTotal(it);
                 return (
@@ -2876,8 +2890,13 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
                     <td style={{...tdBase,textAlign:'center'}}>{it.nos}</td>
                     <td style={{...tdBase,textAlign:'center'}}>{area||'—'}</td>
                     <td style={{...tdBase,textAlign:'center'}}>{it.type}</td>
-                    <td style={{...tdBase,textAlign:'right'}}>{(it.unitCost||0).toLocaleString('en-IN')}</td>
+                    {false && <td style={{...tdBase,textAlign:'right'}}>{(it.unitCost||0).toLocaleString('en-IN')}</td>}{/* CHANGED (deactivated): Rate now struck through when Discounted Rate is used */}
+                    <td style={{...tdBase,textAlign:'right',...((parseFloat(it.discRate)||0)>0?{textDecoration:'line-through',color:'#9CA3AF'}:{})}}>{(it.unitCost||0).toLocaleString('en-IN')}</td>
+                    <td style={{...tdBase,textAlign:'right',color:'#047857',fontWeight:700}}>{(parseFloat(it.discRate)||0)>0 ? Number(it.discRate).toLocaleString('en-IN') : '—'}</td>{/* ADDED: Discounted Rate */}
+                    <td style={{...tdBase,textAlign:'right',fontWeight:700,color:'#1E3A8A',...(((parseFloat(it.discRate)||0)>0||it.excluded)?{textDecoration:'line-through',color:'#9CA3AF'}:{})}}>{calcItemTotal({...it,discRate:0}).toLocaleString('en-IN')}</td>{/* ADDED: Total Price */}
+                    {(true || (parseFloat(it.discRate)||0)>0) ? ( /* CHANGED per request: always show the price here (actual price when no discount); the “—” option below is kept but inactive */
                     <td style={{...tdGold,textAlign:'right',...(it.excluded?{textDecoration:'line-through',color:'#9CA3AF'}:{})}}>{tot.toLocaleString('en-IN')}</td>
+                    ) : <td style={{...tdGold,textAlign:'right',...(it.excluded?{textDecoration:'line-through',color:'#9CA3AF'}:{})}}>{tot.toLocaleString('en-IN')}</td>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
                     <td style={tdBase}>{it.excluded&&<b style={{color:'#6B7280'}}>Not included{it.remarks?' · ':''}</b>}{it.remarks}</td>
                   </tr>
                 );
@@ -2960,9 +2979,17 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
                     : null
                   }
                   <div style={{margin:'12px 0',border:`1px solid ${C.border}`,borderRadius:4,overflow:'hidden'}}>
+                    {!showRateDisc && (<>
                     <div style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',background:C.lightGray,borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:10,fontWeight:600}}>Subtotal</span><span style={{fontSize:10,fontWeight:600}}>Rs. {subtotal.toLocaleString('en-IN')}</span></div>
                     {discountAmount>0&&<div style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',background:'#F0FDF4',borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:10,fontWeight:600,color:'#065F46'}}>Discount{discountPercent>0?` (${discountPercent}%)`:''}</span><span style={{fontSize:10,fontWeight:600,color:'#065F46'}}>- Rs. {discountAmount.toLocaleString('en-IN')}</span></div>}
                     {discountAmount>0&&<div style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',background:C.lightGray,borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:10,fontWeight:600,color:'#555'}}>After Discount</span><span style={{fontSize:10,fontWeight:600}}>Rs. {afterDiscount.toLocaleString('en-IN')}</span></div>}
+                    </>)}
+                    {/* ADDED: with Discounted Rates — Subtotal at Rate, all discounts in the Discount row */}
+                    {showRateDisc && (<>
+                    <div style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',background:C.lightGray,borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:10,fontWeight:600}}>Subtotal (at Rate)</span><span style={{fontSize:10,fontWeight:600}}>Rs. {grossSubtotal.toLocaleString('en-IN')}</span></div>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 14px',background:'#F0FDF4',borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:10,fontWeight:600,color:'#065F46'}}>Discount <span style={{display:'inline-block',background:'#065F46',color:'#fff',fontSize:9,fontWeight:700,borderRadius:8,padding:'0 7px',marginLeft:4}}>{totalDiscPct}%</span>{discountPercent>0?` (${discountPercent}% extra)`:''}<br/><span style={{fontSize:9,fontWeight:500}}>↳ Discounted Rate savings Rs. {rateDiscountTotal.toLocaleString('en-IN')} ({rateDiscPct}%){discountAmount>0?` + Extra discount ${discountPercent>0?discountPercent+'% ':''}Rs. ${discountAmount.toLocaleString('en-IN')}`:''}</span></span><span style={{fontSize:10,fontWeight:600,color:'#065F46'}}>- Rs. {(rateDiscountTotal+discountAmount).toLocaleString('en-IN')}</span></div>
+                    <div style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',background:C.lightGray,borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:10,fontWeight:600,color:'#555'}}>After Discount</span><span style={{fontSize:10,fontWeight:600}}>Rs. {afterDiscount.toLocaleString('en-IN')}</span></div>
+                    </>)}
                     {gstPercent>0&&<div style={{display:'flex',justifyContent:'space-between',padding:'7px 14px',background:'#FFF0EC',borderBottom:`1px solid ${C.border}`}}><span style={{fontSize:10,fontWeight:600,color:'#92400E'}}>GST ({gstPercent}%)</span><span style={{fontSize:10,fontWeight:600,color:'#92400E'}}>+ Rs. {gstAmount.toLocaleString('en-IN')}</span></div>}
                     <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:C.dark,padding:'9px 14px'}}>
                       <span style={{fontSize:12,color:C.gold,fontWeight:700,letterSpacing:1}}>GRAND TOTAL{discountPercent>0?` (${discountPercent}% disc)`:''}{gstPercent>0?` (incl. ${gstPercent}% GST)`:''}</span>
@@ -3366,6 +3393,19 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
   const afterDiscount    = subtotal - discountAmount;
   const gstAmount        = Math.round(afterDiscount * gstPercent / 100);
   const grandTotal       = afterDiscount + gstAmount;
+  // ── ADDED: total of all row discounts (Rate − Discounted Rate) — DISPLAY ONLY ──
+  // Shown in the Discount field. Subtotal / discount / GST / Grand Total calculations above are NOT changed.
+  const _rowDisc = (it) => ((parseFloat(it && it.discRate) || 0) > 0 && !(it && it.excluded)) ? (calcTotal({ ...it, discRate: 0 }) - calcTotal(it)) : 0;
+  const rateDiscountTotal = Math.round((
+    Object.entries(rooms).reduce((s, [k, r]) => s + (k === 'accessories' ? 0 : ((r && r.items) || []).reduce((ss, it) => ss + _rowDisc(it), 0)), 0) +
+    Object.values(sections).reduce((s, sec) => s + ((sec && sec.items) || []).reduce((ss, it) => ss + _rowDisc(it), 0), 0)
+  ) * 100) / 100;
+  const showRateDisc  = rateDiscountTotal > 0;
+  const grossSubtotal = subtotal + rateDiscountTotal; // subtotal at full Rate (before row discounts)
+  // ADDED: discount % (auto) — row savings ÷ Subtotal (at Rate); display only
+  const _discPct      = (v) => grossSubtotal > 0 ? +((v / grossSubtotal) * 100).toFixed(2) : 0;
+  const rateDiscPct   = _discPct(rateDiscountTotal);
+  const totalDiscPct  = _discPct(rateDiscountTotal + discountAmount);
 
   // Total project SFT (same calc used when saving total_sft below) — for display in the summary.
   const totalProjectSft  = parseFloat(Object.entries(rooms).reduce((s, [k, r]) => {
@@ -3745,7 +3785,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                       ):(
                         <div className="item-table-wrap">
                           <table className="item-table">
-                            <thead><tr><th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th><th>Area sft</th><th>Type</th><th>Rate (₹)</th><th>Total (₹)</th><th>Remarks</th><th></th></tr></thead>
+                            <thead><tr><th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th><th>Area sft</th><th>Type</th><th>Rate (₹)</th><th className="disc-th">Discounted Rate (₹)</th>{/* ADDED */}<th className="tp-th">Total Price (₹)</th><th>Discounted Price (₹)</th>{/* CHANGED: Total → Discounted Price; ADDED Total Price */}<th>Remarks</th><th></th></tr></thead>
                             <tbody>
                               {room.items.map((item,idx)=>{
                                 const isSft = item.type === 'SFT';
@@ -3758,7 +3798,20 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                                   <td className="calc-cell">{isSft ? <NumInput className="cell-input num" value={item.sft} onChange={v=>updateItem(key,idx,'sft',v)} placeholder="SFT" /> : (calcItemArea(item)||'—')}</td>
                                   <td><select className="cell-select" value={item.type} onChange={e=>updateItem(key,idx,'type',e.target.value)}>{['BOX','FRAME','PANELLING','GLASS','SFT','FIXED','Wall','PROFILE WITH MIRROR','PROFILE WITH GLASS','DRAWERS','SLIDING KIT'].map(t=><option key={t}>{t}</option>)}</select></td>
                                   <td><NumInput className="cell-input num" value={item.unitCost} onChange={v=>updateItem(key,idx,'unitCost',v)} /></td>
+                                  {/* ADDED: Discounted Rate — when entered, Total = Area × Discounted Rate (Rate shows struck through) */}
+                                  <td className={'disc-cell' + ((parseFloat(item.discRate) || 0) > 0 ? ' disc-on' : '')}>
+                                    <NumInput className="cell-input num disc-input" value={item.discRate || 0} onChange={v => updateItem(key,idx,'discRate',v)} placeholder="—" />
+                                    {(parseFloat(item.discRate) || 0) > 0 && (parseFloat(item.unitCost) || 0) > (parseFloat(item.discRate) || 0) && (
+                                      <span className="disc-save">save ₹{((parseFloat(item.unitCost) || 0) - (parseFloat(item.discRate) || 0)).toLocaleString('en-IN')}</span>)}
+                                  </td>
+                                  {/* ADDED: Total Price = Area × Rate (before discount) */}
+                                  <td className={'tp-cell' + ((parseFloat(item.discRate) || 0) > 0 ? ' tp-struck' : '') + (item.excluded ? ' tp-off' : '')}>₹{calcTotal({ ...item, discRate: 0 }).toLocaleString('en-IN')}
+                                    {(parseFloat(item.discRate) || 0) > 0 && calcTotal({ ...item, discRate: 0 }) > calcItemTotal(item) && <span className="tp-save">save ₹{(Math.round((calcTotal({ ...item, discRate: 0 }) - calcItemTotal(item)) * 100) / 100).toLocaleString('en-IN')}</span>}
+                                  </td>
+                                  {/* ADDED: Discounted Price — existing Total cell shown when a Discounted Rate is entered, otherwise “—” (row still counted in totals) */}
+                                  {(true || (parseFloat(item.discRate) || 0) > 0) ? ( /* CHANGED per request: always show the price here (actual price when no discount); the “—” option below is kept but inactive */
                                   <td className="total-cell" style={item.excluded ? { textDecoration: 'line-through' } : undefined}>₹{calcItemTotal(item).toLocaleString('en-IN')}</td>
+                                  ) : <td className="total-cell" style={item.excluded ? { textDecoration: 'line-through' } : undefined}>₹{calcItemTotal(item).toLocaleString('en-IN')}</td>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
                                   <td><input className="cell-input" value={item.remarks} onChange={e=>updateItem(key,idx,'remarks',e.target.value)} /></td>
                                   <td style={{ whiteSpace: 'nowrap' }}><IncludeToggle on={!item.excluded} onChange={v=>updateItem(key,idx,'excluded',!v)} /><button type="button" className="btn-remove" onClick={()=>removeItem(key,idx)}>✕</button></td>
                                 </tr>
@@ -3794,7 +3847,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                     {!isMin&&(
                       <div className="item-table-wrap">
                         <table className="item-table">
-                          <thead><tr><th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th><th>Area sft</th><th>Type</th><th>Rate (₹)</th><th>Total (₹)</th><th>Remarks</th><th></th></tr></thead>
+                          <thead><tr><th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th><th>Area sft</th><th>Type</th><th>Rate (₹)</th><th className="disc-th">Discounted Rate (₹)</th>{/* ADDED */}<th className="tp-th">Total Price (₹)</th><th>Discounted Price (₹)</th>{/* CHANGED: Total → Discounted Price; ADDED Total Price */}<th>Remarks</th><th></th></tr></thead>
                           <tbody>
                             {sec.items.map((item,idx)=>{
                               const isSft = item.type === 'SFT';
@@ -3809,7 +3862,20 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                                 <td className="calc-cell">{item.type==='FIXED' ? 'Fixed' : <NumInput className="cell-input num" value={item.sft} onChange={v=>updateSec(key,idx,'sft',v)} placeholder={whArea>0?String(whArea):'SFT'} />}</td>
                                 <td><select className="cell-select" value={item.type} onChange={e=>updateSec(key,idx,'type',e.target.value)}>{['BOX','FRAME','PANELLING','GLASS','SFT','FIXED','PROFILE WITH MIRROR','PROFILE WITH GLASS','DRAWERS','SLIDING KIT'].map(t=><option key={t}>{t}</option>)}</select></td>
                                 <td><NumInput className="cell-input num" value={item.unitCost} onChange={v=>updateSec(key,idx,'unitCost',v)} /></td>
+                                {/* ADDED: Discounted Rate — when entered, Total = Area × Discounted Rate (Rate shows struck through) */}
+                                <td className={'disc-cell' + ((parseFloat(item.discRate) || 0) > 0 ? ' disc-on' : '')}>
+                                  <NumInput className="cell-input num disc-input" value={item.discRate || 0} onChange={v => updateSec(key,idx,'discRate',v)} placeholder="—" />
+                                  {(parseFloat(item.discRate) || 0) > 0 && (parseFloat(item.unitCost) || 0) > (parseFloat(item.discRate) || 0) && (
+                                    <span className="disc-save">save ₹{((parseFloat(item.unitCost) || 0) - (parseFloat(item.discRate) || 0)).toLocaleString('en-IN')}</span>)}
+                                </td>
+                                {/* ADDED: Total Price = Area × Rate (before discount) */}
+                                <td className={'tp-cell' + ((parseFloat(item.discRate) || 0) > 0 ? ' tp-struck' : '') + (item.excluded ? ' tp-off' : '')}>₹{calcTotal({ ...item, discRate: 0 }).toLocaleString('en-IN')}
+                                  {(parseFloat(item.discRate) || 0) > 0 && calcTotal({ ...item, discRate: 0 }) > calcItemTotal(item) && <span className="tp-save">save ₹{(Math.round((calcTotal({ ...item, discRate: 0 }) - calcItemTotal(item)) * 100) / 100).toLocaleString('en-IN')}</span>}
+                                </td>
+                                {/* ADDED: Discounted Price — existing Total cell shown when a Discounted Rate is entered, otherwise “—” (row still counted in totals) */}
+                                {(true || (parseFloat(item.discRate) || 0) > 0) ? ( /* CHANGED per request: always show the price here (actual price when no discount); the “—” option below is kept but inactive */
                                 <td className="total-cell">₹{calcItemTotal(item).toLocaleString('en-IN')}</td>
+                                ) : <td className="total-cell">₹{calcItemTotal(item).toLocaleString('en-IN')}</td>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
                                 <td><input className="cell-input" value={item.remarks} onChange={e=>updateSec(key,idx,'remarks',e.target.value)} /></td>
                                 <td><button type="button" className="btn-remove" onClick={()=>removeSecRow(key,idx)}>✕</button></td>
                               </tr>
@@ -3903,7 +3969,13 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
             </div>
 
             <div className="totals-block">
+              {!showRateDisc && (
               <div className="total-row subtotal-row"><span>Subtotal</span><span>₹{subtotal.toLocaleString('en-IN')}</span></div>
+              )}
+              {/* ADDED: when row discounts exist, Subtotal is shown at full Rate (row discounts appear in Discount below) */}
+              {showRateDisc && (
+                <div className="total-row subtotal-row"><span>Subtotal <span className="gst-incl-note">(at Rate)</span></span><span>₹{grossSubtotal.toLocaleString('en-IN')}</span></div>
+              )}
               <div className="total-row sft-total-row"><span>📐 Total SFT</span><span>{totalProjectSft.toLocaleString('en-IN')} SFT</span></div>
               <div className="total-row gst-row">
                 <span className="gst-label-wrap">Discount
@@ -3916,8 +3988,22 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                     <input type="text" inputMode="numeric" className="gst-input" value={discountAmtInput > 0 ? discountAmtInput : (discountPercent > 0 ? discountAmount : '')} min="0" placeholder="0" onChange={e=>{ setDiscountAmtInput(parseFloat(e.target.value)||0); setDiscountPercent(0); }} />
                   </div>
                 </span>
+                {!showRateDisc && (
                 <span className="gst-amount-val" style={{color:'#10B981'}}>- ₹{discountAmount.toLocaleString('en-IN')}</span>
+                )}
+                {showRateDisc && <span className="gst-amount-val" style={{color:'#10B981'}}>- ₹{(rateDiscountTotal + discountAmount).toLocaleString('en-IN')}</span>}{/* ADDED: row discounts + extra discount */}
               </div>
+              {/* ADDED: breakdown of the Discount amount */}
+              {showRateDisc && (
+                <div className="total-row" style={{ fontSize: 12, color: '#047857', paddingTop: 0 }}>
+                  <span>↳ Discounted Rate savings ₹{rateDiscountTotal.toLocaleString('en-IN')} ({rateDiscPct}%){discountAmount > 0 ? ` + Extra discount ₹${discountAmount.toLocaleString('en-IN')}` : ''}</span><span style={{ fontWeight: 700 }}>Total discount {totalDiscPct}%</span>
+                </div>
+              )}
+              {showRateDisc && discountAmount === 0 && (
+                <div className="total-row" style={{opacity:0.75}}>
+                  <span>After Discount</span><span>₹{afterDiscount.toLocaleString('en-IN')}</span>
+                </div>
+              )}
               {discountAmount > 0 && (
                 <div className="total-row" style={{opacity:0.75}}>
                   <span>After Discount</span><span>₹{afterDiscount.toLocaleString('en-IN')}</span>

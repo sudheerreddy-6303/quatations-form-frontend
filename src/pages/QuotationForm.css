@@ -1703,3 +1703,18 @@
   .gt-value { font-size: 17px; }
   input, select, textarea { font-size: 16px !important; }
 }
+/* ── ADDED: Discounted Rate column ─────────────────────────────── */
+.item-table th.disc-th { background:#065F46; color:#fff; white-space:nowrap; }
+.item-table td.disc-cell { background:#F0FDF4; text-align:center; min-width:90px; }
+.item-table td.disc-cell .disc-input { border:1.5px dashed #A7F3D0; border-radius:6px; }
+.item-table td.disc-cell.disc-on .disc-input { border:1.5px solid #10B981; background:#ECFDF5; color:#065F46; font-weight:700; }
+.item-table td.disc-cell .disc-save { display:block; color:#059669; font-size:10.5px; font-weight:600; margin-top:2px; white-space:nowrap; }
+/* Rate (7th column) shown struck through when a Discounted Rate is used */
+.item-table tr:has(> td.disc-cell.disc-on) > td:nth-child(7) input { text-decoration:line-through; color:#9CA3AF; }
+
+/* ── ADDED: Total Price column (Area × Rate, before discount) ───── */
+.item-table th.tp-th { background:#1E3A8A; color:#fff; white-space:nowrap; }
+.item-table td.tp-cell { background:#EFF6FF; color:#1E3A8A; font-weight:700; white-space:normal; min-width:110px; }
+.item-table td.tp-cell.tp-struck { color:#9CA3AF; text-decoration:line-through; }
+.item-table td.tp-cell.tp-off { text-decoration:line-through; opacity:.8; }
+.item-table td.tp-cell .tp-save { display:inline-block; width:100%; color:#059669; font-size:10.5px; font-weight:600; text-decoration:none; } /* inline-block so the cell's strike-through does not apply to it */
