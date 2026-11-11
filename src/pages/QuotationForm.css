@@ -1718,3 +1718,10 @@
 .item-table td.tp-cell.tp-struck { color:#9CA3AF; text-decoration:line-through; }
 .item-table td.tp-cell.tp-off { text-decoration:line-through; opacity:.8; }
 .item-table td.tp-cell .tp-save { display:inline-block; width:100%; color:#059669; font-size:10.5px; font-weight:600; text-decoration:none; } /* inline-block so the cell's strike-through does not apply to it */
+
+/* ── ADDED: row photo (e.g. TV unit) ───────────────────────────── */
+.item-table td.row-photo-cell { white-space:nowrap; text-align:center; min-width:72px; }
+.item-table .row-photo-add { border:1.5px dashed #93C5FD; background:#EFF6FF; color:#1D4ED8; border-radius:6px; padding:4px 8px; font-size:12px; font-weight:600; cursor:pointer; }
+.item-table .row-photo-wrap { position:relative; display:inline-block; }
+.item-table .row-photo-thumb { width:52px; height:38px; object-fit:cover; border-radius:5px; border:1px solid #ddd; cursor:zoom-in; vertical-align:middle; }
+.item-table .row-photo-x { position:absolute; top:-7px; right:-9px; width:18px; height:18px; border-radius:50%; border:none; background:#DC2626; color:#fff; font-size:10px; line-height:18px; padding:0; cursor:pointer; }

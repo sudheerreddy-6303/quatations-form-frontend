@@ -394,3 +394,133 @@
 @media (max-width: 768px) {
   .pm-overlay { align-items: flex-end; padding-top: 0; }
 }
+
+/* ── ADDED (per request): Project Management opens as a FULL PAGE, not a popup ──
+   Purely additive — the rules above are untouched; these come last so they win.
+   The ✕ button (top-right) still closes it and returns to the dashboard. */
+.pm-overlay {
+  background: #F7F7F8;
+  backdrop-filter: none;
+  padding: 0 !important;
+  align-items: stretch !important;
+  justify-content: stretch;
+  overflow: hidden;
+}
+.pm-overlay .pm-modal {
+  max-width: none;
+  width: 100%;
+  max-height: none;
+  height: 100vh;
+  border-radius: 0 !important;
+  box-shadow: none;
+  animation: pmFadeIn 0.18s ease;
+}
+.pm-overlay .pm-modal .pm-header { padding-left: max(24px, calc((100% - 1400px) / 2)); padding-right: max(24px, calc((100% - 1400px) / 2)); }
+@media (max-width: 768px) {
+  .pm-overlay { align-items: stretch !important; }
+  .pm-overlay .pm-modal .pm-header { padding-left: 12px; padding-right: 12px; }
+}
+/* ADDED: the page container has a fade-in animation (transform), which made the fixed overlay
+   start below the navbar and run past the screen bottom. While Project Management is open,
+   switch that container's transform off so the page fills exactly the whole screen. */
+.fade-up:has(.pm-overlay) { transform: none !important; animation: none !important; }
+.pm-overlay { position: fixed; inset: 0; height: 100vh; height: 100dvh; }
+.pm-overlay .pm-modal { height: 100%; }
+
+/* ── ADDED (per request): Booked Items — aligned columns + Expenses column ──
+   Fixed column widths so every room/section table lines up, and headers aligned like their values. */
+.pm-booked-items table { table-layout: fixed; width: 100%; }
+.pm-booked-items td { overflow-wrap: anywhere; }
+/* room / section tables (11 columns) */
+.pm-booked-items table:has(thead th:nth-child(11)) th:nth-child(1)  { width: 17%; }
+.pm-booked-items table:has(thead th:nth-child(11)) th:nth-child(2),
+.pm-booked-items table:has(thead th:nth-child(11)) th:nth-child(3)  { width: 5.5%; }
+.pm-booked-items table:has(thead th:nth-child(11)) th:nth-child(4)  { width: 5%; }
+.pm-booked-items table:has(thead th:nth-child(11)) th:nth-child(5)  { width: 6.5%; }
+.pm-booked-items table:has(thead th:nth-child(11)) th:nth-child(6)  { width: 9%; }
+.pm-booked-items table:has(thead th:nth-child(11)) th:nth-child(7),
+.pm-booked-items table:has(thead th:nth-child(11)) th:nth-child(8)  { width: 8.5%; }
+.pm-booked-items table:has(thead th:nth-child(11)) th:nth-child(9),
+.pm-booked-items table:has(thead th:nth-child(11)) th:nth-child(10) { width: 10.5%; }
+.pm-booked-items table:has(thead th:nth-child(11)) th:nth-child(11) { width: 13.5%; }
+.pm-booked-items table:has(thead th:nth-child(11)) th:nth-child(n+2):nth-child(-n+6) { text-align: center !important; }
+.pm-booked-items table:has(thead th:nth-child(11)) th:nth-child(n+7) { text-align: right !important; }
+/* accessories table (5 columns) */
+.pm-booked-items table:not(:has(thead th:nth-child(6))) th:nth-child(1) { width: 40%; }
+.pm-booked-items table:not(:has(thead th:nth-child(6))) th:nth-child(2) { width: 12%; text-align: center !important; }
+.pm-booked-items table:not(:has(thead th:nth-child(6))) th:nth-child(3),
+.pm-booked-items table:not(:has(thead th:nth-child(6))) th:nth-child(4) { width: 17%; text-align: right !important; }
+.pm-booked-items table:not(:has(thead th:nth-child(6))) th:nth-child(5) { width: 14%; text-align: right !important; }
+/* Expenses input */
+.pm-exp-input { width: 100%; max-width: 120px; box-sizing: border-box; padding: 5px 8px; border: 1.5px dashed #FCD34D; border-radius: 6px; background: #FFFBEB; text-align: right; font-size: 11.5px; font-weight: 700; color: #92400E; font-family: inherit; outline: none; }
+.pm-exp-input:focus { border-style: solid; border-color: #F59E0B; background: #fff; }
+.pm-exp-input.over { border: 1.5px solid #DC2626; background: #FEF2F2; color: #B91C1C; }
+.pm-exp-input:disabled { opacity: .6; }
+/* phones: let the wide table scroll sideways instead of squashing */
+@media (max-width: 768px) {
+  .pm-booked-items { overflow-x: auto; }
+  .pm-booked-items table:has(thead th:nth-child(11)) { min-width: 900px; }
+}
+
+/* ── ADDED (per request): bigger Total and Spent (Expenses) in Booked Items headers ── */
+.pm-booked-items div[style*="space-between"] { align-items: center; padding-top: 10px !important; padding-bottom: 10px !important; }
+.pm-booked-items div[style*="space-between"] > span:first-child { font-size: 14px; }
+.pm-booked-items div[style*="space-between"] > span:last-child:not(:first-child),
+.pm-booked-items .pm-head-total { font-size: 18px !important; font-weight: 800; letter-spacing: .2px; }
+.pm-booked-items .pm-exp-tag { font-size: 15px !important; font-weight: 800 !important; padding: 4px 12px !important; border-radius: 8px !important; margin-right: 18px !important; }
+@media (max-width: 768px) {
+  .pm-booked-items div[style*="space-between"] > span:last-child:not(:first-child),
+  .pm-booked-items .pm-head-total { font-size: 15px !important; }
+  .pm-booked-items .pm-exp-tag { font-size: 13px !important; padding: 3px 8px !important; margin-right: 10px !important; }
+}
+
+/* ── ADDED (per request): bigger numbers & letters in Booked Items rows ── */
+.pm-booked-items table td { font-size: 14px !important; padding-top: 10px !important; padding-bottom: 10px !important; }
+.pm-booked-items table td:first-child { font-weight: 600; color: #1a1a1a !important; }
+.pm-booked-items table th { font-size: 12px !important; color: #555 !important; padding-top: 9px !important; padding-bottom: 9px !important; }
+.pm-booked-items .pm-exp-input { font-size: 14px !important; padding: 7px 10px !important; max-width: 140px; }
+@media (max-width: 768px) {
+  .pm-booked-items table td { font-size: 13px !important; }
+  .pm-booked-items table th { font-size: 11px !important; }
+  .pm-booked-items table:has(thead th:nth-child(11)) { min-width: 1050px; }
+}
+/* ADDED: on phones some global table CSS turns tables into blocks, so rows no longer line up
+   with their headers. Keep Booked Items as real tables (they scroll sideways instead). */
+@media (max-width: 768px) {
+  .pm-booked-items table { display: table !important; }
+  .pm-booked-items thead { display: table-header-group !important; }
+  .pm-booked-items tbody { display: table-row-group !important; }
+  .pm-booked-items tr { display: table-row !important; }
+  .pm-booked-items th, .pm-booked-items td { display: table-cell !important; }
+  .pm-booked-items table:not(:has(thead th:nth-child(6))) { min-width: 640px; }
+}
+.pm-booked-items table td:first-child { white-space: normal !important; overflow-wrap: anywhere; word-break: break-word; }
+
+/* ── ADDED (per request): Booked Items in the same colours as the quotation form ── */
+.pm-booked-items { padding: 6px 12px 12px; }
+.pm-booked-items > div > div { border: 1.5px solid #ECECEC; border-radius: 14px; overflow: hidden; background: #fff; margin: 12px 0 !important; }
+/* room header: room colour tint + left bar + icon (like .room-card-header) */
+.pm-booked-items div[style*="space-between"] { position: relative; isolation: isolate; gap: 10px; padding-left: 18px !important; padding-right: 18px !important; }
+.pm-booked-items .pm-room-tint { position: absolute; inset: 0; z-index: -1; background: color-mix(in srgb, var(--rc) 8%, white); border-left: 4px solid var(--rc); border-bottom: 1.5px solid color-mix(in srgb, var(--rc) 18%, #ECECEC); }
+.pm-booked-items .pm-room-icon { font-size: 20px; line-height: 1; margin-right: -2px; }
+.pm-booked-items div[style*="space-between"]:has(.pm-room-tint) { justify-content: flex-start !important; background: transparent !important; border-left: none !important; }
+.pm-booked-items div[style*="space-between"]:has(.pm-room-tint) > span:nth-child(3) { font-size: 15px; font-weight: 700; color: #1a1a1a; }
+.pm-booked-items div[style*="space-between"]:has(.pm-room-tint) > span:last-child { margin-left: auto; }
+.pm-booked-items div[style*="space-between"]:has(.pm-room-tint) > .pm-exp-tag { margin-left: auto; }
+.pm-booked-items div[style*="space-between"]:has(.pm-room-tint) > .pm-exp-tag + span:last-child { margin-left: 0; }
+/* table head: dark like the quotation form */
+.pm-booked-items table thead tr { background: #1a1a1a !important; }
+.pm-booked-items table thead th { color: #DDD !important; border-bottom: none !important; letter-spacing: .8px; }
+.pm-booked-items table:has(thead th:nth-child(11)) thead th:nth-child(8)  { background: #065F46; color: #fff !important; }
+.pm-booked-items table:has(thead th:nth-child(11)) thead th:nth-child(9)  { background: #1E3A8A; color: #fff !important; }
+.pm-booked-items table thead th:last-child { background: #B45309; color: #fff !important; }
+/* column tints like the form (Disc. Rate green, Total Price blue, Expenses amber) */
+.pm-booked-items table:has(thead th:nth-child(11)) tbody td:nth-child(8)  { background: #F0FDF4; }
+.pm-booked-items table:has(thead th:nth-child(11)) tbody td:nth-child(9)  { background: #EFF6FF; }
+.pm-booked-items table tbody td:last-child { background: #FFFBEB; }
+.pm-booked-items table tbody tr:hover td { background-color: #FFF8EC; }
+@media (max-width: 768px) {
+  .pm-booked-items { overflow-x: visible; padding: 4px 8px 10px; }
+  .pm-booked-items > div > div { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .pm-booked-items > div > div > div[style*="space-between"] { position: sticky; left: 0; }
+}

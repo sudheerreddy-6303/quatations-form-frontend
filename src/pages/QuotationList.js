@@ -147,6 +147,7 @@ function CompletionBar({ quotationId }) {
 
 function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdits,
   onVersions,
+  onSplitPdf, // ADDED: separate PDFs
   onView, onEdit, onRequestEdit, onPayment, onDownload, onPrint, onDelete, onProjectMgmt, onVisitReport, onCompletion, onComplete, onFollowup, onLeadStatus }) {
   const [open, setOpen]   = React.useState(false);
   const [pos,  setPos]    = React.useState({ top:0, left:0 });
@@ -271,6 +272,7 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
               <Item icon="⚰️" label="Mark Dead"  color="#6B7280" onClick={()=>onLeadStatus('Dead')} />
               <Item icon="⬇"   label="Download PDF"     color="#374151" onClick={onDownload} sep />
               <Item icon="🖨"   label="Print PDF"        color="#374151" onClick={onPrint} />
+              {onSplitPdf && <><Item icon="🪵" label="Wood Work PDF" color="#7C3AED" onClick={()=>onSplitPdf('wood')} sep /><Item icon="🔩" label="Accessories PDF" color="#B45309" onClick={()=>onSplitPdf('accessories')} /><Item icon="⚡" label="Other Works PDF" color="#047857" onClick={()=>onSplitPdf('other')} /></>}{/* ADDED: separate PDFs */}
               {isAdmin && onVersions && <Item icon="🕘" label="Version History" color="#7C3AED" onClick={onVersions} />}
             </>
           ) : (
@@ -287,6 +289,7 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
                 <Item icon="🏆" label="Mark Complete"  color="#CA8A04" onClick={onComplete} />}
               <Item icon="⬇"   label="Download PDF"   color="#374151" onClick={onDownload} sep />
               <Item icon="🖨"   label="Print PDF"      color="#374151" onClick={onPrint} />
+              {onSplitPdf && <><Item icon="🪵" label="Wood Work PDF" color="#7C3AED" onClick={()=>onSplitPdf('wood')} sep /><Item icon="🔩" label="Accessories PDF" color="#B45309" onClick={()=>onSplitPdf('accessories')} /><Item icon="⚡" label="Other Works PDF" color="#047857" onClick={()=>onSplitPdf('other')} /></>}{/* ADDED: separate PDFs */}
               {isAdmin && onVersions && <Item icon="🕘" label="Version History" color="#7C3AED" onClick={onVersions} />}
               {canDelete   && <Item icon="🗑" label="Delete"        color="#B91C1C" onClick={onDelete} sep />}
             </>
@@ -1496,6 +1499,11 @@ import { pdf } from '@react-pdf/renderer';
 import { QuotationPDF } from '../components/QuotationPDF';
 import { DEFAULT_ROOMS, calcArea, calcTotal } from '../utils/roomData';
 import { calcRateDiscountTotal } from '../utils/roomData'; // ADDED: Discounted Rate totals breakdown in View
+import { getBranchDetails } from '../utils/branchDetails'; // ADDED: branch-wise address + bank in View
+import { RowPhotoCell } from '../components/RowPhoto'; // ADDED: row photo
+import SplitPdfMenu from '../components/SplitPdfMenu'; // ADDED: separate PDFs (Wood Work / Accessories / Other Works)
+import { downloadSplitPDFs } from '../utils/splitQuotation'; // ADDED: separate PDFs
+import { hasVersions, versionLabel, fmtVDate, fmtVAmt } from '../utils/versionInfo'; // ADDED: version + revision history
 import { printQuotation } from '../utils/printQuotation';
 import { showQuotationSavedPopup } from '../utils/savedPopup';
 import ProjectManagement from '../components/ProjectManagement';
@@ -2837,6 +2845,7 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
   const tdGold = { ...tdBase, color:C.gold, fontWeight:700 };
   const COL = { name:'26%', w:'6%', h:'6%', nos:'5%', area:'7%', type:'9%', rate:'12%', total:'13%', remark:'16%' };
   // ADDED: Discounted Rate column — widths used by the room tables below (Particulars 26→22, Remarks 16→12, Disc 8)
+  const branchInfo = getBranchDetails(data && data.site_manager_branch); // ADDED: branch-wise address + bank
   const COL2 = { ...COL, name:'16%', disc:'7%', tprice:'10%', remark:'9%' }; // CHANGED: also fits Total Price
 
   const NOTES = (() => {
@@ -2884,7 +2893,11 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
                 const area=calcItemArea(it); const tot=calcItemTotal(it);
                 return (
                   <tr key={i} style={{background:i%2===1?C.rowAlt:C.white,...(it.excluded?{opacity:0.5,background:'#F3F4F6'}:{})}}>
+                    {it.photo ? (
+                    <td style={tdBase}><div style={{display:'flex',alignItems:'center',gap:6}}><img src={it.photo} alt="" style={{width:46,height:34,objectFit:'cover',borderRadius:3,border:'1px solid #ddd',flexShrink:0}}/><span>{it.name}</span></div></td>
+                    ) : (
                     <td style={tdBase}>{it.name}</td>
+                    )}{/* ADDED: row photo next to the item name */}
                     <td style={{...tdBase,textAlign:'center'}}>{it.type!=='FIXED'?it.width:''}</td>
                     <td style={{...tdBase,textAlign:'center'}}>{it.type!=='FIXED'?it.height:''}</td>
                     <td style={{...tdBase,textAlign:'center'}}>{it.nos}</td>
@@ -2916,6 +2929,7 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
           <div><h2 className="modal-title">Quotation Preview</h2><p className="modal-sub">QID #{data.quotation_id||data.id} — {new Date(data.created_at).toLocaleDateString('en-IN')}</p></div>
           <div className="modal-actions">
             <button className="action-btn download" onClick={handleDownload}>⬇ Download PDF</button>
+            <SplitPdfMenu data={data} />{/* ADDED: separate PDFs */}
             <button className="action-btn print" onClick={handlePrint}>🖨 Print</button>
             {canDelete && <button className="action-btn delete-btn" onClick={()=>onDelete&&onDelete(data.id)}>🗑 Delete</button>}
             <button className="modal-close" onClick={onClose}>✕</button>
@@ -2942,13 +2956,17 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
                     <div style={{fontSize:9,color:'#AAA',marginTop:3}}>Date: {invoiceDate}</div>
                     <div style={{fontSize:9,color:'#AAA'}}>{smPhone?`Mobile: ${smPhone}`:'Mobile: 9000700930 / 910'}</div>
                     <div style={{fontSize:9,color:'#AAA'}}>Interior work Estimation</div>
+                    {versionLabel(data) && <div style={{display:'inline-block',marginTop:4,fontSize:9,fontWeight:700,color:'#B45309',background:'#FFF4E5',border:'1px solid #FCD34D',borderRadius:3,padding:'1px 7px'}}>{versionLabel(data)}</div>}{/* ADDED: current version + revised date */}
                   </div>
                 </div>
                 <div style={{height:3,background:C.gold}}/>
                 <div style={{padding:'10px 32px 4px',lineHeight:1.5,borderBottom:`1px solid ${C.border}`}}>
                   <div style={{fontSize:14,fontWeight:800,color:C.dark}}>DEERAJ INTERIORS</div>
+                  {!branchInfo && (<>
                   <div style={{fontSize:9,color:'#444'}}>Branch 1: SECOND FLOOR, PLOT NO.119, KOMPALLY, JEEDIMETLA, GREEN PARK AVENUE, Hyderabad, Medchal Malkajgiri, Telangana, 500055</div>
                   <div style={{fontSize:9,color:'#444'}}>Branch 2: PAVANI ENCORE BUILDING, BESIDE NANAKRAMGUDA TOLLGATE, ABOVE RATNADEEP, 1ST FLOOR, Hyderabad, Telangana</div>
+                  </>)}
+                  {branchInfo && <div style={{fontSize:9,color:'#444'}}>{branchInfo.label}: {branchInfo.address}</div>}{/* ADDED: only the selected branch */}
                   <div style={{fontSize:9,color:'#444'}}>GSTIN/UIN: 36BDFPG9987H1ZY</div>
                   <div style={{fontSize:9,color:'#444'}}>State Name : Telangana, Code : 36</div>
                 </div>
@@ -2996,16 +3014,36 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
                       <span style={{fontSize:16,color:C.gold,fontWeight:700}}>Rs. {grandTotal.toLocaleString('en-IN')}</span>
                     </div>
                   </div>
+                  {/* ADDED: Revision History — all versions with changed date, who changed, reason and grand total */}
+                  {hasVersions(data) && (
+                    <div style={{border:`0.5px solid ${C.border}`,marginTop:10}}>
+                      <div style={{background:'#1A1A1A',color:'#fff',fontSize:9,fontWeight:700,letterSpacing:1,padding:'5px 10px'}}>REVISION HISTORY</div>
+                      <table style={{width:'100%',borderCollapse:'collapse',fontSize:9}}>
+                        <thead><tr style={{background:'#F4F4F4',color:'#555',fontSize:8}}>{['VERSION','DATE','CHANGED BY','REASON','GRAND TOTAL'].map((h,i)=><th key={h} style={{padding:'4px 10px',textAlign:i===4?'right':'left'}}>{h}</th>)}</tr></thead>
+                        <tbody>{data.version_history.map((v,i,a)=>{ const cur=i===a.length-1; return (
+                          <tr key={i} style={{borderTop:'1px solid #EEE',background:cur?'#FFF8EC':'#fff',fontWeight:cur?700:400}}>
+                            <td style={{padding:'4px 10px'}}>V{v.version}{cur?' (current)':''}</td>
+                            <td style={{padding:'4px 10px'}}>{fmtVDate(v.date)}</td>
+                            <td style={{padding:'4px 10px'}}>{v.by||'—'}{i===0?' (created)':''}</td>
+                            <td style={{padding:'4px 10px'}}>{v.reason||'—'}</td>
+                            <td style={{padding:'4px 10px',textAlign:'right'}}>{fmtVAmt(v.total)}</td>
+                          </tr>); })}</tbody>
+                      </table>
+                    </div>
+                  )}
                   <div style={{background:C.lightGray,border:`0.5px solid ${C.border}`,borderRadius:3,padding:'9px 12px',marginTop:8}}>
                     <div style={{fontSize:9,fontWeight:700,marginBottom:4}}>NOTE:</div>
                     {NOTES.map((n,i)=><div key={i} style={{fontSize:8,color:C.gray,lineHeight:1.5,marginBottom:2}}>{i+1}. {n}</div>)}
                   </div>
                   <div style={{background:C.lightGray,border:`0.5px solid ${C.border}`,borderRadius:3,padding:'9px 12px',marginTop:8,lineHeight:1.5}}>
                     <div style={{fontSize:9,fontWeight:700,marginBottom:2}}>BANK DETAILS</div>
+                    {!(branchInfo && branchInfo.bank) && (<>
                     <div style={{fontSize:8,color:C.gray}}>Deeraj Interiors</div>
                     <div style={{fontSize:8,color:C.gray}}>Account Number : 4623 0400 0001 80</div>
                     <div style={{fontSize:8,color:C.gray}}>Bank of Baroda — Kompally Branch</div>
                     <div style={{fontSize:8,color:C.gray}}>IFSC : 500012040</div>
+                    </>)}
+                    {branchInfo && branchInfo.bank && branchInfo.bank.map((l,i)=><div key={i} style={{fontSize:8,color:C.gray}}>{l}</div>)}{/* ADDED: branch bank account */}
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between',marginTop:24,paddingTop:10,borderTop:`0.5px solid ${C.border}`}}>
                     <div style={{textAlign:'center',minWidth:110}}><div style={{height:32}}/><div style={{height:1,background:C.dark,marginBottom:4}}/><div style={{fontSize:8,color:C.gray}}>CUSTOMER SIGN</div><div style={{fontSize:9,fontWeight:700}}>{data.customer_name}</div></div>
@@ -3652,6 +3690,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                 <div className="nav-overview-group-title">🏠 Rooms</div>
                 <div className="nav-overview-grid">
                   {Object.entries(rooms).map(([key,room], idx, arr)=>{
+                    if (key === 'accessories') return null; // ADDED: Accessories shown in its own row below (Rooms row = wood work only)
                     const t=room.items.reduce((s,it)=>s+(key==='accessories'?calcRoomAccTotal(it):calcRoomItemTotal(it)),0);
                     const isDragging = dragRoomKey === key;
                     const isDropTarget = dragOverRoomKey === key && dragRoomKey && dragRoomKey !== key;
@@ -3688,6 +3727,20 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                   })}
                 </div>
               </div>
+              {/* ADDED: Accessories in its own row, below the wood-work rooms */}
+              {rooms.accessories && (()=>{ const ta=rooms.accessories.items.reduce((s,it)=>s+calcRoomAccTotal(it),0); return (<>
+              <div className="nav-overview-divider" />
+              <div className="nav-overview-group">
+                <div className="nav-overview-group-title">🔩 Accessories</div>
+                <div className="nav-overview-grid">
+                  <a href="#edit-card-accessories" className="nav-overview-item" style={{'--chip-color':rooms.accessories.color}}>
+                    <span className="nav-ov-icon">{ROOM_ICONS.accessories||'🔩'}</span>
+                    <span className="nav-ov-name">{rooms.accessories.label}</span>
+                    <span className="nav-ov-amt">{ta===0?'—':'₹'+ta.toLocaleString('en-IN')}</span>
+                  </a>
+                </div>
+              </div>
+              </>); })()}
               <div className="nav-overview-divider" />
               <div className="nav-overview-group">
                 <div className="nav-overview-group-title-row">
@@ -3785,7 +3838,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                       ):(
                         <div className="item-table-wrap">
                           <table className="item-table">
-                            <thead><tr><th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th><th>Area sft</th><th>Type</th><th>Rate (₹)</th><th className="disc-th">Discounted Rate (₹)</th>{/* ADDED */}<th className="tp-th">Total Price (₹)</th><th>Discounted Price (₹)</th>{/* CHANGED: Total → Discounted Price; ADDED Total Price */}<th>Remarks</th><th></th></tr></thead>
+                            <thead><tr><th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th><th>Area sft</th><th>Type</th><th>Rate (₹)</th><th className="disc-th">Discounted Rate (₹)</th>{/* ADDED */}<th className="tp-th">Total Price (₹)</th><th>Discounted Price (₹)</th>{/* CHANGED: Total → Discounted Price; ADDED Total Price */}<th>Remarks</th><th>Photo</th>{/* ADDED: row photo */}<th></th></tr></thead>
                             <tbody>
                               {room.items.map((item,idx)=>{
                                 const isSft = item.type === 'SFT';
@@ -3813,6 +3866,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                                   <td className="total-cell" style={item.excluded ? { textDecoration: 'line-through' } : undefined}>₹{calcItemTotal(item).toLocaleString('en-IN')}</td>
                                   ) : <td className="total-cell" style={item.excluded ? { textDecoration: 'line-through' } : undefined}>₹{calcItemTotal(item).toLocaleString('en-IN')}</td>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
                                   <td><input className="cell-input" value={item.remarks} onChange={e=>updateItem(key,idx,'remarks',e.target.value)} /></td>
+                                  <RowPhotoCell value={item.photo} onChange={v => updateItem(key,idx,'photo',v)} />{/* ADDED: row photo (e.g. TV unit) */}
                                   <td style={{ whiteSpace: 'nowrap' }}><IncludeToggle on={!item.excluded} onChange={v=>updateItem(key,idx,'excluded',!v)} /><button type="button" className="btn-remove" onClick={()=>removeItem(key,idx)}>✕</button></td>
                                 </tr>
                                 );
@@ -3847,7 +3901,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                     {!isMin&&(
                       <div className="item-table-wrap">
                         <table className="item-table">
-                          <thead><tr><th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th><th>Area sft</th><th>Type</th><th>Rate (₹)</th><th className="disc-th">Discounted Rate (₹)</th>{/* ADDED */}<th className="tp-th">Total Price (₹)</th><th>Discounted Price (₹)</th>{/* CHANGED: Total → Discounted Price; ADDED Total Price */}<th>Remarks</th><th></th></tr></thead>
+                          <thead><tr><th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th><th>Area sft</th><th>Type</th><th>Rate (₹)</th><th className="disc-th">Discounted Rate (₹)</th>{/* ADDED */}<th className="tp-th">Total Price (₹)</th><th>Discounted Price (₹)</th>{/* CHANGED: Total → Discounted Price; ADDED Total Price */}<th>Remarks</th><th>Photo</th>{/* ADDED: row photo */}<th></th></tr></thead>
                           <tbody>
                             {sec.items.map((item,idx)=>{
                               const isSft = item.type === 'SFT';
@@ -3877,6 +3931,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                                 <td className="total-cell">₹{calcItemTotal(item).toLocaleString('en-IN')}</td>
                                 ) : <td className="total-cell">₹{calcItemTotal(item).toLocaleString('en-IN')}</td>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
                                 <td><input className="cell-input" value={item.remarks} onChange={e=>updateSec(key,idx,'remarks',e.target.value)} /></td>
+                                <RowPhotoCell value={item.photo} onChange={v => updateSec(key,idx,'photo',v)} />{/* ADDED: row photo (e.g. TV unit) */}
                                 <td><button type="button" className="btn-remove" onClick={()=>removeSecRow(key,idx)}>✕</button></td>
                               </tr>
                               );
@@ -4501,6 +4556,11 @@ export default function QuotationList({ user = { role: 'admin' } }) {
     }
   };
 
+  // ADDED: separate PDFs (Wood Work / Accessories / Other Works) from the Actions menu
+  const handleSplitPdf = async (id, part) => {
+    try { const res=await api.get(`/quotations/${id}`); await downloadSplitPDFs(res.data.data, part); }
+    catch { toast.error('Failed',{id:'split'}); }
+  };
   const handleDownload = async (id) => {
     const res=await api.get(`/quotations/${id}`); const d=res.data.data;
     toast.loading('Generating…',{id:'dl'});
@@ -4570,15 +4630,17 @@ export default function QuotationList({ user = { role: 'admin' } }) {
   // Status-tab counts — each is the true total for that status, independent of
   // which tab is currently active.
   const countAll       = preStatus.length;
-  const countBooked    = preStatus.filter(q=>(q.project_status||'Unbooked')==='Booked').length;
-  const countUnbooked  = preStatus.filter(q=>(q.project_status||'Unbooked')==='Unbooked').length;
+  // CHANGED per request: a project that counts as Completed is shown ONLY in the Completed tab
+  // (added "&& !isCompleted(q)"), so every project is in exactly one tab and the counts add up to All.
+  const countBooked    = preStatus.filter(q=>(q.project_status||'Unbooked')==='Booked' && !isCompleted(q)).length;
+  const countUnbooked  = preStatus.filter(q=>(q.project_status||'Unbooked')==='Unbooked' && !isCompleted(q)).length;
   const countCompleted = preStatus.filter(isCompleted).length;
 
   // Final visible list applies the selected status tab on top of preStatus.
   const filtered = preStatus.filter(q =>
     statusFilter === 'All'       ? true :
     statusFilter === 'Completed' ? isCompleted(q) :
-    (q.project_status||'Unbooked') === statusFilter
+    (q.project_status||'Unbooked') === statusFilter && !isCompleted(q) // CHANGED: added "&& !isCompleted(q)" (completed projects only in Completed tab)
   );
 
   // Cards computed from filtered — all roles see all quotations
@@ -4745,6 +4807,8 @@ export default function QuotationList({ user = { role: 'admin' } }) {
       {/* ── Summary Cards — 5 per row ── */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:14,marginBottom:18}}>
 
+        {/* ADDED (per request): All tab → all cards exactly as before; other tabs → only that tab's cards (below) */}
+        {statusFilter === 'All' && (<>
         {/* ── Row 1: Counts ── */}
         {[
           { icon:'📋', bg:'#FFF0EC', label:'Total Quotations', value: cardBase.length,  color:'#E8471C', sub: hasFilters?`of ${quotations.length} total`:null },
@@ -4780,6 +4844,36 @@ export default function QuotationList({ user = { role: 'admin' } }) {
             </div>
           </div>
         ))}
+        </>)}
+
+        {/* ── ADDED (per request): cards for the selected tab (Booked / Unbooked / Completed) ──
+            Worked out from the projects in that tab (cardBase = list after filters + tab). */}
+        {statusFilter !== 'All' && (() => {
+          const tabSft = parseFloat(cardBase.reduce((s,q) => s + calcSftFromRooms(q), 0).toFixed(2));
+          const T = statusFilter;
+          const theme = T === 'Booked'   ? { icon:'✅', bg:'#EFF6FF', color:'#1D4ED8' }
+                      : T === 'Unbooked' ? { icon:'🔘', bg:'#FFF5F5', color:'#EF4444' }
+                      :                    { icon:'🏆', bg:'#FEFCE8', color:'#CA8A04' };
+          const cards = [
+            { icon: theme.icon, bg: theme.bg, label: `${T} Projects`, value: cardBase.length, color: theme.color, sub: hasFilters ? `filters applied` : null },
+            { icon: T === 'Unbooked' ? '📦' : '🏠', bg: T === 'Unbooked' ? '#FFF8F0' : '#EFF6FF', label: `${T} Amount`, value: fmtAmt(totalGrand), color: T === 'Unbooked' ? '#F97316' : '#1D4ED8', isMoney: true },
+            ...(T === 'Unbooked' ? [] : [
+              { icon:'✅', bg:'#F0FDF4', label:`${T} Paid`,    value: fmtAmt(totalPaid),    color:'#10B981', isMoney:true },
+              { icon:'🔴', bg:'#FFF0F0', label:`${T} Balance`, value: fmtAmt(totalBalance), color:'#EF4444', isMoney:true },
+            ]),
+            { icon:'📐', bg:'#F5F3FF', label:`${T} SFT`, value: fmtSft(tabSft), color:'#7C3AED', isMoney:false },
+          ];
+          return cards.map((c,i)=>(
+            <div key={'tab'+i} style={{background:'#fff',borderRadius:14,padding:'18px 20px',boxShadow:'0 2px 12px rgba(0,0,0,0.07)',border:'1.5px solid #F0F0F0',display:'flex',alignItems:'center',gap:14,minHeight:90}}>
+              <div style={{width:52,height:52,borderRadius:12,background:c.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>{c.icon}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,color:'#888',fontWeight:600,marginBottom:4,fontFamily:"'DM Sans',sans-serif"}}>{c.label}</div>
+                <div style={{fontSize:c.isMoney?18:26,fontWeight:800,color:c.color,fontFamily:"'DM Sans',sans-serif",lineHeight:1,wordBreak:'break-all'}}>{c.value}</div>
+                {c.sub&&<div style={{fontSize:10,color:'#AAA',marginTop:3}}>{c.sub}</div>}
+              </div>
+            </div>
+          ));
+        })()}
       </div>
 
       {/* ── Filters ── */}
@@ -4995,6 +5089,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                     onRequestEdit={()=>setEditRequestModal(q)}
                     onPayment={()=>handlePayment(q.id)}
                     onDownload={()=>handleDownload(q.id)}
+                    onSplitPdf={(part)=>handleSplitPdf(q.id, part)}
                     onPrint={()=>handlePrint(q.id)}
                     onDelete={()=>handleDelete(q.id)}
                     onProjectMgmt={(isManager||isAdmin) && q.project_status==='Booked' ? ()=>{ setPmProjectId(q.id); setShowProjectMgmt(true); } : null}
@@ -5089,6 +5184,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                     onRequestEdit={()=>setEditRequestModal(q)}
                     onPayment={()=>handlePayment(q.id)}
                     onDownload={()=>handleDownload(q.id)}
+                    onSplitPdf={(part)=>handleSplitPdf(q.id, part)}
                     onPrint={()=>handlePrint(q.id)}
                     onDelete={()=>handleDelete(q.id)}
                     onProjectMgmt={(isManager||isAdmin) && q.project_status==='Booked' ? ()=>{ setPmProjectId(q.id); setShowProjectMgmt(true); } : null}

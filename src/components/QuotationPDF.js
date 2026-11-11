@@ -2,6 +2,8 @@ import React from 'react';
 import { Document, Page, Text, View, StyleSheet, Image } from '@react-pdf/renderer';
 import { calcArea, calcTotal, calcRoomTotal } from '../utils/roomData';
 import { calcRateDiscountTotal } from '../utils/roomData'; // ADDED: Discounted Rate totals breakdown
+import { getBranchDetails } from '../utils/branchDetails'; // ADDED: branch-wise address + bank
+import { hasVersions, versionLabel, fmtVDate, fmtVAmt } from '../utils/versionInfo'; // ADDED: version + revision history
 
 const API_BASE = (process.env.REACT_APP_API_URL || 'http://localhost:5001/api').trim();
 const LOGO_URL = `${API_BASE}/logo.png`;
@@ -221,7 +223,14 @@ function ItemTableSection({ label, items, sno, isAccessory }) {
               </>
             ) : (
               <>
+                {item.photo ? (
+                <View style={[s.colName, { flexDirection: 'row', alignItems: 'center' }]}>
+                  <Image src={item.photo} style={{ width: 34, height: 25, objectFit: 'cover', marginRight: 4, borderRadius: 2 }} />
+                  <Text style={[s.td, { flex: 1 }]}>{item.name}</Text>
+                </View>
+                ) : (
                 <Text style={[s.td, s.colName]}>{item.name}</Text>
+                )}{/* ADDED: row photo next to the item name */}
                 <Text style={[s.td, s.colW]}>{item.type !== 'FIXED' ? item.width : ''}</Text>
                 <Text style={[s.td, s.colH]}>{item.type !== 'FIXED' ? item.height : ''}</Text>
                 <Text style={[s.td, s.colNos]}>{item.nos}</Text>
@@ -264,6 +273,7 @@ function PageHeader({ invoiceDate, smPhone, showQuotationLabel, quotationId }) {
 }
 
 export function QuotationPDF({ data }) {
+  const branchInfo = getBranchDetails(data && data.site_manager_branch); // ADDED: branch-wise address + bank
   const rooms = data.rooms || {};
   const rawCd = data.ceiling_data || {};
   const isNewFormat = rawCd.ceiling || rawCd.electrical || rawCd.wooden || rawCd.marble || rawCd.general;
@@ -331,12 +341,21 @@ export function QuotationPDF({ data }) {
          ══════════════════════════════════════════════ */}
       <Page size="A4" style={s.page}>
         <PageHeader invoiceDate={invoiceDate} smPhone={smPhone} showQuotationLabel quotationId={quotationId} />
+        {/* ADDED: current version + revised date */}
+        {versionLabel(data) && (
+          <View style={{ alignItems: 'flex-end', marginTop: 4, marginBottom: 2, marginRight: 30 }}>
+            <Text style={{ fontSize: 7.5, fontWeight: 'bold', color: '#B45309', backgroundColor: '#FFF4E5', paddingVertical: 2, paddingHorizontal: 6, borderRadius: 2 }}>{versionLabel(data)}</Text>
+          </View>
+        )}
 
         {/* Company Details */}
         <View style={{ paddingHorizontal: 30, paddingTop: 8, paddingBottom: 6 }}>
           <Text style={{ fontSize: 13, fontWeight: 'bold', color: C.dark }}>DEERAJ INTERIORS</Text>
+          {!branchInfo && (<>
           <Text style={{ fontSize: 8, color: '#444', marginTop: 2, lineHeight: 1.4 }}>Branch 1: SECOND FLOOR, PLOT NO.119, KOMPALLY, JEEDIMETLA, GREEN PARK AVENUE, Hyderabad, Medchal Malkajgiri, Telangana, 500055</Text>
           <Text style={{ fontSize: 8, color: '#444', lineHeight: 1.4 }}>Branch 2: PAVANI ENCORE BUILDING, BESIDE NANAKRAMGUDA TOLLGATE, ABOVE RATNADEEP, 1ST FLOOR, Hyderabad, Telangana</Text>
+          </>)}
+          {branchInfo && <Text style={{ fontSize: 8, color: '#444', marginTop: 2, lineHeight: 1.4 }}>{branchInfo.label}: {branchInfo.address}</Text>}{/* ADDED: only the selected branch */}
           <Text style={{ fontSize: 8, color: '#444' }}>GSTIN/UIN: 36BDFPG9987H1ZY</Text>
           <Text style={{ fontSize: 8, color: '#444' }}>State Name : Telangana, Code : 36</Text>
         </View>
@@ -405,10 +424,19 @@ export function QuotationPDF({ data }) {
         }
 
         {/* Interior subtotal banner */}
+        {!data.__part && (<>
         <View style={s.totalInteriorRow}>
           <Text style={s.totalInteriorLabel}>Total 1 — Interior Work</Text>
           <Text style={s.totalInteriorValue}>{fmt(totalInterior)}</Text>
         </View>
+        </>)}
+        {/* ADDED: separate PDF (Wood Work / Accessories) — its own subtotal banner; Other Works has no room banner */}
+        {data.__part && data.__part !== 'other' && (
+        <View style={s.totalInteriorRow}>
+          <Text style={s.totalInteriorLabel}>{data.__partLabel} Subtotal</Text>
+          <Text style={s.totalInteriorValue}>{fmt(totalInterior)}</Text>
+        </View>
+        )}
 
         {/* ── NEW SECTIONS or legacy ceiling ── */}
         {isNewFormat ? (
@@ -526,6 +554,30 @@ export function QuotationPDF({ data }) {
           </View>
         </View>
 
+        {/* ADDED: Revision History — all versions with changed date, who changed, reason and grand total */}
+        {hasVersions(data) && (
+          <View wrap={false} style={{ marginTop: 10, marginHorizontal: 16, borderWidth: 0.5, borderColor: '#E0E0E0' }}>
+            <Text style={{ backgroundColor: '#1A1A1A', color: '#FFFFFF', fontSize: 7.5, fontWeight: 'bold', letterSpacing: 1, paddingVertical: 4, paddingHorizontal: 6 }}>REVISION HISTORY</Text>
+            <View style={{ flexDirection: 'row', backgroundColor: '#F4F4F4', paddingVertical: 3, paddingHorizontal: 6 }}>
+              {[['VERSION','13%'],['DATE','15%'],['CHANGED BY','18%'],['REASON','34%'],['GRAND TOTAL','20%']].map(([h,w], i) => (
+                <Text key={h} style={{ width: w, fontSize: 6.5, fontWeight: 'bold', color: '#555', textAlign: i === 4 ? 'right' : 'left' }}>{h}</Text>))}
+            </View>
+            {data.version_history.map((v, i) => {
+              const cur = i === data.version_history.length - 1;
+              const st = { fontSize: 7, color: '#333', fontWeight: cur ? 'bold' : 'normal' };
+              return (
+                <View key={i} style={{ flexDirection: 'row', paddingVertical: 3, paddingHorizontal: 6, borderTopWidth: 0.5, borderTopColor: '#EEEEEE', backgroundColor: cur ? '#FFF8EC' : '#FFFFFF' }}>
+                  <Text style={[st, { width: '13%' }]}>V{v.version}{cur ? ' (current)' : ''}</Text>
+                  <Text style={[st, { width: '15%' }]}>{fmtVDate(v.date)}</Text>
+                  <Text style={[st, { width: '18%' }]}>{v.by || '—'}{i === 0 ? ' (created)' : ''}</Text>
+                  <Text style={[st, { width: '34%' }]}>{v.reason || '—'}</Text>
+                  <Text style={[st, { width: '20%', textAlign: 'right' }]}>{fmtVAmt(v.total)}</Text>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         {/* Notes */}
         <View style={s.notesSection}>
           <Text style={s.notesTitle}>NOTE:</Text>
@@ -537,10 +589,13 @@ export function QuotationPDF({ data }) {
         {/* Bank Details */}
         <View style={{ marginTop: 10, borderWidth: 0.5, borderColor: C.border, borderRadius: 2, padding: '8 12' }}>
           <Text style={{ fontSize: 8, fontWeight: 'bold', color: C.dark, marginBottom: 2 }}>BANK DETAILS</Text>
+          {!(branchInfo && branchInfo.bank) && (<>
           <Text style={{ fontSize: 7.5, color: '#444', lineHeight: 1.4 }}>Deeraj Interiors</Text>
           <Text style={{ fontSize: 7.5, color: '#444' }}>Account Number : 4623 0400 0001 80</Text>
           <Text style={{ fontSize: 7.5, color: '#444' }}>Bank of Baroda — Kompally Branch</Text>
           <Text style={{ fontSize: 7.5, color: '#444' }}>IFSC : 500012040</Text>
+          </>)}
+          {branchInfo && branchInfo.bank && branchInfo.bank.map((l, i) => <Text key={i} style={{ fontSize: 7.5, color: '#444', lineHeight: 1.4 }}>{l}</Text>)}{/* ADDED: branch bank account */}
         </View>
         </View>
 
@@ -605,6 +660,8 @@ export function QuotationPDF({ data }) {
       {/* ══════════════════════════════════════════════
           PAGE 3 — PAYMENT SCHEDULE
          ══════════════════════════════════════════════ */}
+      {/* ADDED: payment schedule pages are only in the full quotation, not in the separate PDFs */}
+      {!data.__part && (<>
       <Page size="A4" style={s.tcPage}>
         <PageHeader invoiceDate={invoiceDate} smPhone={smPhone} showQuotationLabel={false} />
         <View style={{ padding: '20 0 0 0' }}>
@@ -664,6 +721,7 @@ export function QuotationPDF({ data }) {
         <View style={s.footerLine} />
         <Text style={s.pageNum} render={({ pageNumber, totalPages }) => `${pageNumber} / ${totalPages}`} fixed />
       </Page>
+      </>)}{/* ADDED: end of full-quotation-only payment pages */}
     </Document>
   );
 }

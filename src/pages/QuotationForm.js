@@ -7,6 +7,7 @@ import { showMissingFieldsPopup } from '../utils/savedPopup';
 import toast from 'react-hot-toast';
 import { DEFAULT_ROOMS, calcArea, calcTotal, calcRoomTotal } from '../utils/roomData';
 import ProjectManagement from '../components/ProjectManagement';
+import { RowPhotoCell } from '../components/RowPhoto'; // ADDED: row photo
 import './QuotationForm.css';
 
 
@@ -153,7 +154,7 @@ function RoomItemTableWithRemove({ items, onUpdate, onRemove }) {
         <thead>
           <tr>
             <th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th>
-            <th>Area sft</th><th>Type</th><th>Rate (₹)</th><th className="disc-th">Discounted Rate (₹)</th>{/* ADDED */}<th className="tp-th">Total Price (₹)</th><th>Discounted Price (₹)</th>{/* CHANGED: Total → Discounted Price; ADDED Total Price */}<th>Remarks</th><th></th>
+            <th>Area sft</th><th>Type</th><th>Rate (₹)</th><th className="disc-th">Discounted Rate (₹)</th>{/* ADDED */}<th className="tp-th">Total Price (₹)</th><th>Discounted Price (₹)</th>{/* CHANGED: Total → Discounted Price; ADDED Total Price */}<th>Remarks</th><th>Photo</th>{/* ADDED: row photo */}<th></th>
           </tr>
         </thead>
         <tbody>
@@ -191,6 +192,7 @@ function RoomItemTableWithRemove({ items, onUpdate, onRemove }) {
               <td className="total-cell" style={item.excluded ? { textDecoration: 'line-through' } : undefined}>₹{calcTotal(item).toLocaleString('en-IN')}</td>
               ) : <td className="total-cell" style={item.excluded ? { textDecoration: 'line-through' } : undefined}>₹{calcTotal(item).toLocaleString('en-IN')}</td>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
               <td><input className="cell-input" value={item.remarks} onChange={e => onUpdate(idx, 'remarks', e.target.value)} /></td>
+              <RowPhotoCell value={item.photo} onChange={v => onUpdate(idx, 'photo', v)} />{/* ADDED: row photo (e.g. TV unit) */}
               <td style={{ whiteSpace: 'nowrap' }}><IncludeToggle on={!item.excluded} onChange={v => onUpdate(idx, 'excluded', !v)} /><button type="button" className="btn-remove" onClick={() => onRemove(idx)}>✕</button></td>
             </tr>
             );
@@ -208,7 +210,7 @@ function SectionTable({ items, onUpdate, onRemove }) {
         <thead>
           <tr>
             <th>Particulars</th><th>W (in)</th><th>H (in)</th><th>Nos</th>
-            <th>Area sft</th><th>Type</th><th>Rate (₹)</th><th className="disc-th">Discounted Rate (₹)</th>{/* ADDED */}<th className="tp-th">Total Price (₹)</th><th>Discounted Price (₹)</th>{/* CHANGED: Total → Discounted Price; ADDED Total Price */}<th>Remarks</th><th></th>
+            <th>Area sft</th><th>Type</th><th>Rate (₹)</th><th className="disc-th">Discounted Rate (₹)</th>{/* ADDED */}<th className="tp-th">Total Price (₹)</th><th>Discounted Price (₹)</th>{/* CHANGED: Total → Discounted Price; ADDED Total Price */}<th>Remarks</th><th>Photo</th>{/* ADDED: row photo */}<th></th>
           </tr>
         </thead>
         <tbody>
@@ -249,6 +251,7 @@ function SectionTable({ items, onUpdate, onRemove }) {
                 <td className="total-cell">₹{total.toLocaleString('en-IN')}</td>
                 ) : <td className="total-cell">₹{total.toLocaleString('en-IN')}</td>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
                 <td><input className="cell-input" value={item.remarks} onChange={e => onUpdate(idx, 'remarks', e.target.value)} /></td>
+                <RowPhotoCell value={item.photo} onChange={v => onUpdate(idx, 'photo', v)} />{/* ADDED: row photo (e.g. TV unit) */}
                 <td><button type="button" className="btn-remove" onClick={() => onRemove(idx)}>✕</button></td>
               </tr>
             );
@@ -1117,6 +1120,7 @@ export default function QuotationForm({ user }) {
               <div className="nav-overview-group-title">🏠 Rooms</div>
               <div className="nav-overview-grid">
                 {Object.entries(rooms).map(([key, room], idx, arr) => {
+                  if (key === 'accessories') return null; // ADDED: Accessories shown in its own row below (Rooms row = wood work only)
                   const roomTotal = calcRoomTotal(room.items);
                   const isDragging = dragRoomKey === key;
                   const isDropTarget = dragOverRoomKey === key && dragRoomKey && dragRoomKey !== key;
@@ -1153,6 +1157,20 @@ export default function QuotationForm({ user }) {
                 })}
               </div>
             </div>
+            {/* ADDED: Accessories in its own row, below the wood-work rooms */}
+            {rooms.accessories && (<>
+            <div className="nav-overview-divider" />
+            <div className="nav-overview-group">
+              <div className="nav-overview-group-title">🔩 Accessories</div>
+              <div className="nav-overview-grid">
+                <a href="#room-card-accessories" className="nav-overview-item" style={{ '--chip-color': rooms.accessories.color }}>
+                  <span className="nav-ov-icon">{ROOM_ICONS.accessories || '🔩'}</span>
+                  <span className="nav-ov-name">{rooms.accessories.label}</span>
+                  <span className="nav-ov-amt">{calcRoomTotal(rooms.accessories.items) === 0 ? '—' : '₹' + calcRoomTotal(rooms.accessories.items).toLocaleString('en-IN')}</span>
+                </a>
+              </div>
+            </div>
+            </>)}
             <div className="nav-overview-divider" />
             <div className="nav-overview-group">
               <div className="nav-overview-group-title-row">

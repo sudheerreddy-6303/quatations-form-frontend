@@ -3,6 +3,8 @@
 // Uses the EXACT same layout as the ViewModal, plus watermark
 
 import { calcRateDiscountTotal } from './roomData'; // ADDED: Discounted Rate totals breakdown
+import { getBranchDetails } from './branchDetails'; // ADDED: branch-wise address + bank
+import { hasVersions, versionLabel, fmtVDate, fmtVAmt } from './versionInfo'; // ADDED: version + revision history
 
 const API_BASE = (process.env.REACT_APP_API_URL || 'http://localhost:5001/api').trim();
 const LOGO_URL = `${API_BASE}/logo.png`;
@@ -130,7 +132,9 @@ function tableSection(label, items, isAccessory, color='#E8471C', bg='#FFF0EC') 
       </tr>`;
     }
     return `<tr style="background:${bg2}${offTr}">
+      ${it.photo ? `<td><div style="display:flex;align-items:center;gap:6px"><img src="${it.photo}" style="width:46px;height:34px;object-fit:cover;border-radius:3px;border:1px solid #ddd;flex-shrink:0"/><span>${it.name||''}</span></div></td>` : `
       <td>${it.name||''}</td>
+      `}<!-- ADDED: row photo next to the item name -->
       <td style="text-align:center">${it.type!=='FIXED'?(it.width||''):''}</td>
       <td style="text-align:center">${it.type!=='FIXED'?(it.height||''):''}</td>
       <td style="text-align:center">${it.nos||0}</td>
@@ -215,6 +219,7 @@ export function printQuotation(data, transactions=[]) {
   const smDesig  = data.site_manager_designation || 'Site Manager';
   const smPhone  = data.site_manager_phone || '';
   const smBranch = data.site_manager_branch || '';
+  const branchInfo = getBranchDetails(smBranch); // ADDED: branch-wise address + bank
 
   const dash = (v) => (v && String(v).trim()) ? String(v).trim() : '—';
 
@@ -389,12 +394,15 @@ export function printQuotation(data, transactions=[]) {
   ${watermark}
   <div class="page-content">
     ${pageHeader(invoiceDate, smPhone, true, quotationId)}
+    ${versionLabel(data) ? `<div style="text-align:right;margin:-4px 0 6px"><span style="display:inline-block;font-size:8pt;font-weight:bold;color:#B45309;background:#FFF4E5;border:1px solid #FCD34D;border-radius:3px;padding:1px 7px">${versionLabel(data)}</span></div>` : ''}<!-- ADDED: current version + revised date -->
 
     <!-- Company Details -->
     <div style="padding:6px 0 8px;line-height:1.5">
       <div style="font-size:13pt;font-weight:bold;color:#1A1A1A">DEERAJ INTERIORS</div>
+      ${!branchInfo ? `
       <div style="font-size:8.5pt;color:#333">Branch 1: SECOND FLOOR, PLOT NO.119, KOMPALLY, JEEDIMETLA, GREEN PARK AVENUE, Hyderabad, Medchal Malkajgiri, Telangana, 500055</div>
       <div style="font-size:8.5pt;color:#333">Branch 2: PAVANI ENCORE BUILDING, BESIDE NANAKRAMGUDA TOLLGATE, ABOVE RATNADEEP, 1ST FLOOR, Hyderabad, Telangana</div>
+      ` : `<div style="font-size:8.5pt;color:#333">${branchInfo.label}: ${branchInfo.address}</div>`}
       <div style="font-size:8.5pt;color:#333">GSTIN/UIN: 36BDFPG9987H1ZY</div>
       <div style="font-size:8.5pt;color:#333">State Name : Telangana, Code : 36</div>
     </div>
@@ -453,15 +461,26 @@ export function printQuotation(data, transactions=[]) {
         </div>
       </div>
 
+      <!-- ADDED: Revision History — all versions with changed date, who changed, reason and grand total -->
+      ${hasVersions(data) ? `<div style="margin-top:10px;border:1px solid #E0E0E0;page-break-inside:avoid;break-inside:avoid">
+        <div style="background:#1A1A1A;color:#fff;font-size:8pt;font-weight:bold;letter-spacing:1px;padding:5px 8px">REVISION HISTORY</div>
+        <table style="width:100%;border-collapse:collapse;font-size:8.5pt">
+          <tr style="background:#F4F4F4;color:#555;font-size:7.5pt"><th style="text-align:left;padding:4px 8px">VERSION</th><th style="text-align:left;padding:4px 8px">DATE</th><th style="text-align:left;padding:4px 8px">CHANGED BY</th><th style="text-align:left;padding:4px 8px">REASON</th><th style="text-align:right;padding:4px 8px">GRAND TOTAL</th></tr>
+          ${data.version_history.map((v,i,a)=>{ const cur=i===a.length-1; return `<tr style="border-top:1px solid #EEE;${cur?'background:#FFF8EC;font-weight:bold':''}"><td style="padding:4px 8px">V${v.version}${cur?' (current)':''}</td><td style="padding:4px 8px">${fmtVDate(v.date)}</td><td style="padding:4px 8px">${(v.by||'—')}${i===0?' (created)':''}</td><td style="padding:4px 8px">${v.reason||'—'}</td><td style="padding:4px 8px;text-align:right">${fmtVAmt(v.total)}</td></tr>`; }).join('')}
+        </table>
+      </div>` : ''}
+
       <!-- Keep the whole Bank Details box on ONE page when printing -->
       <div style="page-break-inside:avoid;break-inside:avoid">
       <!-- Bank Details -->
       <div style="margin-top:10px;border:1px solid #E0E0E0;border-radius:4px;padding:8px 12px;line-height:1.5">
         <div style="font-size:9pt;font-weight:bold;color:#1A1A1A;margin-bottom:2px">BANK DETAILS</div>
+        ${!(branchInfo && branchInfo.bank) ? `
         <div style="font-size:8.5pt;color:#333">Deeraj Interiors</div>
         <div style="font-size:8.5pt;color:#333">Account Number : 4623 0400 0001 80</div>
         <div style="font-size:8.5pt;color:#333">Bank of Baroda &mdash; Kompally Branch</div>
         <div style="font-size:8.5pt;color:#333">IFSC : 500012040</div>
+        ` : branchInfo.bank.map(l => `<div style="font-size:8.5pt;color:#333">${l}</div>`).join('')}
       </div>
       </div>
 

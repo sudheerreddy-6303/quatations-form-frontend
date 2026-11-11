@@ -217,11 +217,63 @@ function emptyRows() {
   return r;
 }
 
+/* ── ADDED (per request): same room icons as the quotation form (Booked Items headers) ── */
+const PM_ROOM_ICONS = { mbr:'🛏', cbr:'🛏', hall:'🛋', dining:'🍽', kitchen:'🍳', accessories:'🔧' };
+const PM_ROOM_COLORS = { mbr:'#8B5CF6', cbr:'#3B82F6', hall:'#10B981', dining:'#F59E0B', kitchen:'#EF4444', accessories:'#C9A84C' };
+
+/* ── ADDED (per request): editable Expenses cell for Booked Items ── */
+function ExpenseCell({ value, price, onSave }) {
+  const [v, setV] = useState(value ? String(value) : '');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setV(value ? String(value) : ''); }, [value]);
+  const commit = async () => {
+    const clean = String(v).replace(/[^0-9.]/g, '');
+    const num = clean === '' ? 0 : Number(clean);
+    if (!Number.isFinite(num) || num < 0) { toast.error('Enter a valid amount'); setV(value ? String(value) : ''); return; }
+    if (num === (Number(value) || 0)) { setV(num ? String(num) : ''); return; }
+    setBusy(true);
+    try { await onSave(num); } catch { setV(value ? String(value) : ''); } finally { setBusy(false); }
+  };
+  const over = (Number(value) || 0) > 0 && price > 0 && Number(value) > price;
+  return (
+    <td style={{ ...TD, textAlign: 'right', padding: '3px 8px' }} className="pm-exp-cell">
+      <input inputMode="decimal" className={'pm-exp-input' + (over ? ' over' : '')} value={v} placeholder="₹ 0" disabled={busy}
+        title={over ? 'Expense is more than the item price' : 'Type the amount spent and press Enter'}
+        onChange={e => setV(e.target.value)} onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }} />
+    </td>
+  );
+}
+
 /* ── Quotation item renderer ──────────────────────────────────── */
 function QuotationItems({ quotation }) {
   const rooms    = quotation?.rooms    || {};
   const sections = quotation?.ceiling_data || {};
   const hasRooms = Object.keys(rooms).length > 0;
+
+  // ── ADDED (per request): per-item expenses (typed by managers, saved per project) ──
+  const [itemExp, setItemExp] = useState({});
+  useEffect(() => {
+    if (!quotation?.id) return;
+    api.get('/project-expenses', { params: { quotation_id: quotation.id } })
+      .then(r => { const m = {}; (r.data?.data || []).forEach(x => { m[x.item_key] = Number(x.amount) || 0; }); setItemExp(m); })
+      .catch(() => {});
+  }, [quotation?.id]);
+  const expKey  = (group, key, i, name) => `${group}:${key}:${i}:${String(name || '').trim()}`;
+  const saveExp = async (k, amount) => {
+    try {
+      await api.put('/project-expenses', { quotation_id: quotation.id, item_key: k, amount });
+      setItemExp(prev => { const n = { ...prev }; if (amount) n[k] = amount; else delete n[k]; return n; });
+      toast.success(amount ? 'Expense saved' : 'Expense cleared');
+    } catch (e) {
+      toast.error(e?.response?.data?.message || 'Could not save expense');
+      throw e;
+    }
+  };
+  const groupExp = (group, key, items) => (items || []).reduce((s, it, i) => s + (itemExp[expKey(group, key, i, it?.name)] || 0), 0);
+  const ExpTag = ({ amt }) => amt > 0 ? (
+    <span className="pm-exp-tag" style={{ marginLeft: 'auto', marginRight: 16, fontSize: 11, fontWeight: 700, color: '#B45309', background: '#FEF3C7', borderRadius: 6, padding: '1px 8px' }}>Spent ₹{fmt(amt)}</span>
+  ) : null;
 
   if (!hasRooms) return (
     <div style={{padding:'16px 20px',color:'#aaa',fontSize:13,textAlign:'center'}}>
@@ -237,7 +289,10 @@ function QuotationItems({ quotation }) {
           <div key={key} style={{marginBottom:8}}>
             <div style={{padding:'7px 16px',background:'#f8f8f8',borderLeft:'3px solid #E8471C',
               fontWeight:700,fontSize:12,color:'#1a1a1a',display:'flex',justifyContent:'space-between'}}>
+              <span className="pm-room-tint" style={{ '--rc': room.color || PM_ROOM_COLORS[key] || '#E8471C' }} aria-hidden="true" />{/* ADDED: room colour like the quotation form */}
+              <span className="pm-room-icon">{PM_ROOM_ICONS[key] || '🚪'}</span>{/* ADDED: room icon */}
               <span>{room.label || key}</span>
+              <ExpTag amt={groupExp('room', key, room.items)} />{/* ADDED: room spent total */}
               <span style={{color:'#E8471C',fontFamily:'monospace'}}>
                 ₹{fmt(room.items.reduce((s,it) => {
                   if (key!=='accessories') { if ((parseFloat(it.discRate)||0) > 0) it = { ...it, origRate: it.unitCost, unitCost: parseFloat(it.discRate) }; /* ADDED: Discounted Rate → totals use it */ }
@@ -256,6 +311,7 @@ function QuotationItems({ quotation }) {
                     ? ['Item','Nos','Unit Cost','Total'].map(h => <th key={h} style={TH}>{h}</th>)
                     : ['Item','W','H','Nos','SFT','Type','Rate','Disc. Rate','Total Price','Disc. Price'].map(h => <th key={h} style={TH}>{h}</th>) /* CHANGED: added 'Disc. Rate', Total → Total Price + Disc. Price */
                   }
+                  <th style={TH}>Expenses</th>{/* ADDED: Expenses column */}
                 </tr>
               </thead>
               <tbody>
@@ -294,6 +350,7 @@ function QuotationItems({ quotation }) {
                         <td style={{...TD,textAlign:'right',fontWeight:700,color:'#E8471C'}}>₹{fmt(total)}</td>
                         ) : <td style={{...TD,textAlign:'right',fontWeight:700,color:'#E8471C'}}>₹{fmt(total)}</td>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
                       </>}
+                      <ExpenseCell value={itemExp[expKey('room', key, i, it.name)]} price={total} onSave={v => saveExp(expKey('room', key, i, it.name), v)} />{/* ADDED: Expenses */}
                     </tr>
                   );
                 })}
@@ -308,10 +365,13 @@ function QuotationItems({ quotation }) {
           <div style={{padding:'7px 16px',background:'#f5f0ff',borderLeft:'3px solid #7c3aed',
             fontWeight:700,fontSize:12,color:'#4c1d95',display:'flex',justifyContent:'space-between'}}>
             <span>{sec.label || key}</span>
+            <ExpTag amt={groupExp('sec', key, sec.items)} />{/* ADDED: section spent total */}
+            <span className="pm-head-total" style={{color:'#7c3aed',fontFamily:'monospace',marginLeft: groupExp('sec', key, sec.items) > 0 ? 0 : 'auto'}}>₹{fmt((sec.items||[]).reduce((s,it)=>{ const u=(parseFloat(it.discRate)||0)>0?parseFloat(it.discRate):(it.unitCost||0); const w=parseFloat(it.width)||0,h=parseFloat(it.height)||0,n=parseFloat(it.nos)||0; if(it.type==='FIXED') return s+u*(n||1); if(!w||!h) return s+n*u; return s+parseFloat(((w*h*n)/144).toFixed(2))*u; },0))}</span>{/* ADDED: section total */}
           </div>
           <table style={{width:'100%',borderCollapse:'collapse',fontSize:11}}>
             <thead><tr style={{background:'#fafafa'}}>
               {['Item','W','H','Nos','SFT','Type','Rate','Disc. Rate','Total Price','Disc. Price'].map(h=><th key={h} style={TH}>{h}</th>) /* CHANGED: added 'Disc. Rate', Total → Total Price + Disc. Price */}
+              <th style={TH}>Expenses</th>{/* ADDED: Expenses column */}
             </tr></thead>
             <tbody>
               {sec.items.map((it,i)=>{
@@ -336,6 +396,7 @@ function QuotationItems({ quotation }) {
                     {(true || it.origRate!==undefined) ? ( /* CHANGED per request: always show the price here (actual price when no discount); the “—” option below is kept but inactive */
                     <td style={{...TD,textAlign:'right',fontWeight:700,color:'#7c3aed'}}>₹{fmt(total)}</td>
                     ) : <td style={{...TD,textAlign:'right',fontWeight:700,color:'#7c3aed'}}>₹{fmt(total)}</td>}{/* CHANGED per request: no Discounted Rate → shows the actual price (was “—”) */}
+                    <ExpenseCell value={itemExp[expKey('sec', key, i, it.name)]} price={total} onSave={v => saveExp(expKey('sec', key, i, it.name), v)} />{/* ADDED: Expenses */}
                   </tr>
                 );
               })}
@@ -1128,7 +1189,9 @@ function ProjectManagement({ onClose, preSelectedProjectId = null }) {
                     📋 Items from quotation — these are the booked interior works for this project
                   </div>
                   {fullQuotation ? (
+                    <div className="pm-booked-items">{/* ADDED: aligned columns */}
                     <QuotationItems quotation={fullQuotation} />
+                    </div>
                   ) : (
                     <div style={{padding:40,textAlign:'center',color:'#aaa'}}>Loading quotation items…</div>
                   )}
