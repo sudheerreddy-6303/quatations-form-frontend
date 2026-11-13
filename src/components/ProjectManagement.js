@@ -784,6 +784,18 @@ function ProjectManagement({ onClose, preSelectedProjectId = null }) {
   const [search,        setSearch]        = useState('');
   const [activeTab,     setActiveTab]     = useState('orders'); // 'orders' | 'quotation'
   const [fullQuotation, setFullQuotation] = useState(null);    // quotation with rooms data
+  // ADDED (per request): Expenses (material orders total) per project for the project list rows
+  const [listExp, setListExp] = useState({});
+  useEffect(() => {
+    if (step !== 'list') return;
+    api.get('/material-orders')
+      .then(r => {
+        const m = {};
+        (r.data?.data || []).forEach(o => { m[o.quotation_id] = (m[o.quotation_id] || 0) + Number(o.total_estimate || 0); });
+        setListExp(m);
+      })
+      .catch(() => {});
+  }, [step]);
 
   const loadProjects = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -921,6 +933,7 @@ function ProjectManagement({ onClose, preSelectedProjectId = null }) {
             ) : (
               <div className="pm-project-list">
                 {filtered.map(p => {
+                  const exp  = listExp[p.id] || 0; // ADDED: material orders total for this project
                   const paid = Number(p.paid_total||0);
                   const total = Number(p.grand_total||0);
                   const pct = total > 0 ? Math.round((paid/total)*100) : 0;
@@ -939,6 +952,13 @@ function ProjectManagement({ onClose, preSelectedProjectId = null }) {
                             <span style={{fontSize:10,color:'#E8471C',fontWeight:700,flexShrink:0}}>{pct}% paid</span>
                           </div>
                         </div>
+                      </div>
+                      {/* ADDED (per request): Project Value · Total Paid · Balance Due · Expenses on each row */}
+                      <div className="pm-row-stats">
+                        <div className="pm-row-stat"><span>Project Value</span><b style={{color:'#1a1a1a'}}>₹{fmt(total)}</b></div>
+                        <div className="pm-row-stat"><span>Total Paid</span><b style={{color:'#10B981'}}>₹{fmt(paid)}</b></div>
+                        <div className="pm-row-stat"><span>Balance Due</span><b style={{color: total-paid>0 ? '#E8471C' : '#10B981'}}>₹{fmt(total-paid)}</b></div>
+                        <div className="pm-row-stat"><span>Expenses</span><b style={{color: paid>0 && exp>paid*0.7 ? '#DC2626' : '#7c3aed'}}>₹{fmt(exp)}</b></div>
                       </div>
                       <div className="pm-project-arrow">
                         {overBudget && (

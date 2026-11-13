@@ -524,3 +524,22 @@
   .pm-booked-items > div > div { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .pm-booked-items > div > div > div[style*="space-between"] { position: sticky; left: 0; }
 }
+
+/* ── ADDED (per request): Project Value / Total Paid / Balance Due / Expenses on each project row ── */
+.pm-project-card .pm-row-stats { display: flex; align-items: stretch; margin: 0 18px 0 12px; background: #fff; border: 1px solid #EEE; border-radius: 10px; overflow: hidden; flex-shrink: 0; }
+.pm-project-card .pm-row-stat { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px 18px; min-width: 120px; border-right: 1px solid #EEE; }
+.pm-project-card .pm-row-stat:last-child { border-right: none; }
+.pm-project-card .pm-row-stat span { font-size: 10.5px; color: #999; margin-bottom: 3px; white-space: nowrap; }
+.pm-project-card .pm-row-stat b { font-family: monospace; font-size: 14.5px; font-weight: 700; white-space: nowrap; }
+@media (max-width: 1100px) {
+  .pm-project-card .pm-row-stat { min-width: 0; padding: 7px 10px; }
+  .pm-project-card .pm-row-stat b { font-size: 12.5px; }
+}
+@media (max-width: 768px) {
+  .pm-project-card { flex-wrap: wrap; }
+  .pm-project-card .pm-row-stats { order: 3; width: 100%; margin: 10px 0 0; }
+  .pm-project-card .pm-row-stat { flex: 1; padding: 6px 4px; }
+  .pm-project-card .pm-row-stat span { font-size: 9px; }
+  .pm-project-card .pm-row-stat b { font-size: 11px; }
+}
+.pm-project-card:has(.pm-row-stats) .pm-project-card-left { flex: 1; min-width: 0; } /* ADDED: name area takes the free space, stats sit next to the Booked badge */

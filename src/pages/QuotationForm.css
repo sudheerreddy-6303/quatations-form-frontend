@@ -1725,3 +1725,15 @@
 .item-table .row-photo-wrap { position:relative; display:inline-block; }
 .item-table .row-photo-thumb { width:52px; height:38px; object-fit:cover; border-radius:5px; border:1px solid #ddd; cursor:zoom-in; vertical-align:middle; }
 .item-table .row-photo-x { position:absolute; top:-7px; right:-9px; width:18px; height:18px; border-radius:50%; border:none; background:#DC2626; color:#fff; font-size:10px; line-height:18px; padding:0; cursor:pointer; }
+
+/* ADDED: Particulars box wraps text and grows in height (width unchanged) */
+.item-table textarea.name-box {
+  display: block;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.35;
+  min-height: 30px;
+  height: auto;
+}

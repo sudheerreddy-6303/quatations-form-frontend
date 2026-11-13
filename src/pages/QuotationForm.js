@@ -10,6 +10,19 @@ import ProjectManagement from '../components/ProjectManagement';
 import { RowPhotoCell } from '../components/RowPhoto'; // ADDED: row photo
 import './QuotationForm.css';
 
+// ADDED: Particulars box — text wraps and the box grows taller (instead of being cut off)
+function NameBox({ value, onChange }) {
+  const ref = useRef(null);
+  const fit = () => { const el = ref.current; if (!el) return; el.style.height = 'auto'; el.style.height = (el.scrollHeight + el.offsetHeight - el.clientHeight) + 'px'; };
+  useEffect(() => { fit(); });
+  return (
+    <textarea ref={ref} rows={1} className="cell-input name-box" value={value || ''}
+      onChange={e => { onChange({ target: { value: e.target.value.replace(/\n/g, ' ') } }); }}
+      onKeyDown={e => { if (e.key === 'Enter') e.preventDefault(); }}
+      onInput={fit} />
+  );
+}
+
 
 const DEFAULT_TC = [
   'Payment Terms: Invoice must be paid within 25 days from the issue date.',
@@ -162,7 +175,7 @@ function RoomItemTableWithRemove({ items, onUpdate, onRemove }) {
             const isSft = item.type === 'SFT';
             return (
             <tr key={idx} className="item-row" style={item.excluded ? OFF_ROW_STYLE : undefined}>
-              <td><input className="cell-input" value={item.name} onChange={e => onUpdate(idx, 'name', e.target.value)} /></td>
+              <td>{false && <input className="cell-input" value={item.name} onChange={e => onUpdate(idx, 'name', e.target.value)} />}<NameBox value={item.name} onChange={e => onUpdate(idx, 'name', e.target.value)} />{/* CHANGED: Particulars box grows in height so the full name is visible */}</td>
               <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.width}    onChange={v => onUpdate(idx, 'width',    v)} />}</td>
               <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.height}   onChange={v => onUpdate(idx, 'height',   v)} />}</td>
               <td><NumInput className="cell-input num" value={item.nos}      onChange={v => onUpdate(idx, 'nos',      v)} /></td>
@@ -221,7 +234,7 @@ function SectionTable({ items, onUpdate, onRemove }) {
             const whArea = (item.type !== 'FIXED' && _w && _h && _n) ? parseFloat(((_w * _h * _n) / 144).toFixed(2)) : 0;
             return (
               <tr key={idx} className="item-row">
-                <td><input className="cell-input" value={item.name} onChange={e => onUpdate(idx, 'name', e.target.value)} /></td>
+                <td>{false && <input className="cell-input" value={item.name} onChange={e => onUpdate(idx, 'name', e.target.value)} />}<NameBox value={item.name} onChange={e => onUpdate(idx, 'name', e.target.value)} />{/* CHANGED: Particulars box grows in height so the full name is visible */}</td>
                 <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.width}    onChange={v => onUpdate(idx, 'width',    v)} placeholder="W" />}</td>
                 <td>{isSft ? <span style={{color:'#bbb',fontSize:12}}>—</span> : <NumInput className="cell-input num" value={item.height}   onChange={v => onUpdate(idx, 'height',   v)} placeholder="H" />}</td>
                 <td><NumInput className="cell-input num" value={item.nos}      onChange={v => onUpdate(idx, 'nos',      v)} placeholder="Nos" /></td>
@@ -1264,7 +1277,7 @@ export default function QuotationForm({ user }) {
                           <tbody>
                             {room.items.map((item, idx) => (
                               <tr key={idx} className="item-row" style={item.excluded ? OFF_ROW_STYLE : undefined}>
-                                <td><input className="cell-input" value={item.name} onChange={e => updateItem('accessories', idx, 'name', e.target.value)} /></td>
+                                <td>{false && <input className="cell-input" value={item.name} onChange={e => updateItem('accessories', idx, 'name', e.target.value)} />}<NameBox value={item.name} onChange={e => updateItem('accessories', idx, 'name', e.target.value)} />{/* CHANGED: Particulars box grows in height so the full name is visible */}</td>
                                 <td><input type="text" inputMode="numeric" className="cell-input num" value={item.nos} onChange={e => updateItem('accessories', idx, 'nos', parseFloat(e.target.value)||0)} /></td>
                                 <td><input type="text" inputMode="numeric" className="cell-input num" value={item.unitCost} onChange={e => updateItem('accessories', idx, 'unitCost', parseFloat(e.target.value)||0)} /></td>
                                 <td className="total-cell" style={item.excluded ? { textDecoration: 'line-through' } : undefined}>₹{(item.nos * item.unitCost).toLocaleString('en-IN')}</td>
