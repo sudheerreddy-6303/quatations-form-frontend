@@ -1,4 +1,4 @@
-// ── ADDED (per request): separate PDFs for Wood Work / Accessories / Other Works ──
+// ── ADDED (per request): 4 separate PDFs only — Rooms / Accessories / Interior Services / Other Works ──
 // Builds a copy of the quotation data that holds ONLY one part's items, with that part's own
 // subtotal, its proportional share of the extra discount and GST, and its own total.
 // The three part totals always add up exactly to the full quotation total.
@@ -8,44 +8,64 @@ import { pdf } from '@react-pdf/renderer';
 import toast from 'react-hot-toast';
 import { QuotationPDF } from '../components/QuotationPDF';
 import { calcTotal, calcRoomTotal } from './roomData';
+import { SERVICE_KEYS, isSectionsFormat, isCustomServiceKey } from './interiorServices'; // ADDED: Interior Services
 
 export const SPLIT_PARTS = [
-  { key: 'wood',        label: 'Wood Work',   icon: '🪵', hint: 'MBR, CBR, Hall, Dining, Kitchen…' },
+  { key: 'wood',        label: 'Rooms',       icon: '🪵', hint: 'MBR, CBR, Hall, Dining, Kitchen… (wood work)' },
   { key: 'accessories', label: 'Accessories', icon: '🔩', hint: 'Tandum, Hardware, Transport…' },
-  { key: 'other',       label: 'Other Works', icon: '⚡', hint: 'Electrical, Wooden Acc., Marble, General' },
+  // ADDED: ONE PDF for all Interior Services together (False Ceiling, Granite, Lighting, Electrical + custom)
+  { key: 'services',    label: 'Interior Services', icon: '🛠', hint: 'False Ceiling, Granite, Lighting, Electrical…' },
+  { key: 'other',       label: 'Other Works', icon: '📐', hint: 'Wooden Acc., Marble, General' },
 ];
+
 
 const r2 = (v) => Math.round((Number(v) || 0) * 100) / 100;
 const parseObj = (v) => { if (typeof v === 'string' && v) { try { return JSON.parse(v); } catch { return {}; } } return v || {}; };
 const SECTION_KEYS = ['ceiling', 'electrical', 'wooden', 'marble', 'general'];
 
+// ADDED: custom services ("＋ Add Service") in this quotation, in saved order
+const customServiceKeys = (cd) => Object.keys(cd || {}).filter(k => isCustomServiceKey(k) && cd[k] && Array.isArray(cd[k].items));
+
+// ADDED: the 4 parts (same for every quotation)
+export const partsFor = () => SPLIT_PARTS;
+
 // Split the quotation's rooms / sections into the three parts
 const splitContent = (data) => {
   const rooms = parseObj(data.rooms);
   const rawCd = parseObj(data.ceiling_data);
-  const isNewFormat = SECTION_KEYS.some(k => rawCd[k]);
+  const isNewFormat = SECTION_KEYS.some(k => rawCd[k]) || isSectionsFormat(rawCd); // CHANGED: also new service keys
   const woodRooms = {}, accRooms = {};
   Object.entries(rooms).forEach(([k, room]) => { if (k === 'accessories') accRooms[k] = room; else woodRooms[k] = room; });
   const roomsTotal = (rs) => Object.values(rs).reduce((s, r) => s + calcRoomTotal((r && r.items) || []), 0);
+  const secSum = (sec) => ((sec && Array.isArray(sec.items)) ? sec.items : []).reduce((ss, it) => ss + calcTotal(it), 0);
+  // ADDED: all Interior Services go together in ONE part; Other Works keeps the remaining sections
+  const otherCd = {};
+  const svcCd = {};
+  const svcKeys = [...SERVICE_KEYS, ...customServiceKeys(rawCd)]; // incl. custom services
+  if (isNewFormat) {
+    Object.entries(rawCd).forEach(([k, sec]) => { if (svcKeys.includes(k)) svcCd[k] = sec; else otherCd[k] = sec; });
+  }
+  const out = { services: { rooms: {}, ceiling_data: svcCd, sub: r2(Object.values(svcCd).reduce((s, sec) => s + secSum(sec), 0)) } };
   const secTotal = isNewFormat
-    ? Object.values(rawCd).reduce((s, sec) => s + (((sec && Array.isArray(sec.items)) ? sec.items : []).reduce((ss, it) => ss + calcTotal(it), 0)), 0)
+    ? Object.values(otherCd).reduce((s, sec) => s + secSum(sec), 0)
     : Number(data.total_ceiling || 0);   // old quotations: keep the stored ceiling total
   return {
     wood:        { rooms: woodRooms, ceiling_data: {}, sub: r2(roomsTotal(woodRooms)) },
     accessories: { rooms: accRooms,  ceiling_data: {}, sub: r2(roomsTotal(accRooms)) },
-    other:       { rooms: {},        ceiling_data: rawCd, sub: r2(secTotal) },
+    ...out,
+    other:       { rooms: {},        ceiling_data: isNewFormat ? otherCd : rawCd, sub: r2(secTotal) },
   };
 };
 
 // Which parts actually have something in them
 export const availableParts = (data) => {
   const c = splitContent(data);
-  return SPLIT_PARTS.filter(p => c[p.key].sub > 0);
+  return partsFor(data).filter(p => c[p.key] && c[p.key].sub > 0);
 };
 
 export const buildPartData = (data, partKey) => {
   const c = splitContent(data);
-  const order = ['wood', 'accessories', 'other'];
+  const order = partsFor(data).map(p => p.key); // CHANGED: includes Interior Services (+ custom)
   const fullSub = order.reduce((s, k) => s + c[k].sub, 0);
   const D = Number(data.discount_amount || 0);
   const G = Number(data.gst_amount || 0);
@@ -64,7 +84,7 @@ export const buildPartData = (data, partKey) => {
     if (k === last) { gst[k] = r2(G - gAcc); }
     else { gst[k] = afterAll > 0 ? r2(G * (c[k].sub - disc[k]) / afterAll) : 0; gAcc += gst[k]; }
   });
-  const part = SPLIT_PARTS.find(p => p.key === partKey);
+  const part = partsFor(data).find(p => p.key === partKey);
   const sub = c[partKey].sub, d = disc[partKey] || 0, g = gst[partKey] || 0;
   return {
     ...data,
@@ -73,8 +93,8 @@ export const buildPartData = (data, partKey) => {
     quotation_id: `${data.quotation_id || data.id || ''} · ${(part ? part.label : partKey).toUpperCase()}`,
     rooms: c[partKey].rooms,
     ceiling_data: c[partKey].ceiling_data,
-    total_interior: partKey === 'other' ? 0 : sub,
-    total_ceiling:  partKey === 'other' ? sub : 0,
+    total_interior: (partKey === 'wood' || partKey === 'accessories') ? sub : 0,
+    total_ceiling:  (partKey === 'wood' || partKey === 'accessories') ? 0 : sub,
     discount_amount: d,
     gst_percent: gstPct,
     gst_amount: g,
@@ -83,7 +103,7 @@ export const buildPartData = (data, partKey) => {
 };
 
 export const downloadPartPDF = async (data, partKey) => {
-  const part = SPLIT_PARTS.find(p => p.key === partKey);
+  const part = partsFor(data).find(p => p.key === partKey);
   const partData = buildPartData(data, partKey);
   const blob = await pdf(<QuotationPDF data={partData} />).toBlob();
   const url = URL.createObjectURL(blob);
@@ -99,7 +119,7 @@ export const downloadSplitPDFs = async (data, which) => {
   const parts = availableParts(data);
   const list = which === 'all' ? parts.map(p => p.key) : [which];
   if (!list.length || (which !== 'all' && !parts.some(p => p.key === which))) {
-    const part = SPLIT_PARTS.find(p => p.key === which);
+    const part = partsFor(data).find(p => p.key === which);
     toast.error(`No ${part ? part.label : ''} items in this quotation`, { id: 'split' });
     return;
   }

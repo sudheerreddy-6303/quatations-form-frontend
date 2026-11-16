@@ -5,6 +5,7 @@
 import { calcRateDiscountTotal } from './roomData'; // ADDED: Discounted Rate totals breakdown
 import { getBranchDetails } from './branchDetails'; // ADDED: branch-wise address + bank
 import { hasVersions, versionLabel, fmtVDate, fmtVAmt } from './versionInfo'; // ADDED: version + revision history
+import { isSectionsFormat } from './interiorServices'; // ADDED: Interior Services
 
 const API_BASE = (process.env.REACT_APP_API_URL || 'http://localhost:5001/api').trim();
 const LOGO_URL = `${API_BASE}/logo.png`;
@@ -16,6 +17,10 @@ const SECTION_META = {
   marble:     { label: 'MARBLE & PLUMBING',      color: '#166534', bg: '#F0FDF4' },
   general:    { label: 'GENERAL',                color: '#6D28D9', bg: '#F5F3FF' },
 };
+// ADDED: Interior Services
+SECTION_META.falseceiling = { label: 'FALSE CEILING', color: '#4338CA', bg: '#EEF2FF' };
+SECTION_META.granite      = { label: 'GRANITE',       color: '#57534E', bg: '#F5F5F4' };
+SECTION_META.lighting     = { label: 'LIGHTING',      color: '#A16207', bg: '#FEFCE8' };
 
 function fmtINR(n) { return 'Rs. ' + Number(n||0).toLocaleString('en-IN'); }
 
@@ -182,7 +187,7 @@ export function printQuotation(data, transactions=[]) {
 
   const rooms  = data.rooms || {};
   const rawCd  = data.ceiling_data || {};
-  const isNewFmt = rawCd.ceiling||rawCd.electrical||rawCd.wooden||rawCd.marble||rawCd.general;
+  const isNewFmt = rawCd.ceiling||rawCd.electrical||rawCd.wooden||rawCd.marble||rawCd.general||isSectionsFormat(rawCd); // CHANGED: also new service sections
   const sections = isNewFmt ? rawCd : null;
   const cd = !isNewFmt ? rawCd : {};
 

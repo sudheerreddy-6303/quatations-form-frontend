@@ -9,6 +9,9 @@ import { DEFAULT_ROOMS, calcArea, calcTotal, calcRoomTotal } from '../utils/room
 import ProjectManagement from '../components/ProjectManagement';
 import { RowPhotoCell } from '../components/RowPhoto'; // ADDED: row photo
 import './QuotationForm.css';
+import QuickAddChips, { AddNameInline } from '../components/QuickAddChips'; // ADDED: empty start + quick add
+import { CUSTOM_SERVICE, newServiceKey } from '../utils/interiorServices'; // ADDED: custom services
+import { SERVICE_DEFS, SERVICE_KEYS, isServiceKey, QUICK_ROOMS, QUICK_OTHER, QUICK_SERVICES, blankRoom, blankAccessories, blankSection, insertRoom, insertSection } from '../utils/interiorServices'; // ADDED: Interior Services
 
 // ADDED: Particulars box — text wraps and the box grows taller (instead of being cut off)
 function NameBox({ value, onChange }) {
@@ -64,6 +67,10 @@ const SECTION_ICONS = {
 const SECTION_COLORS = {
   electrical: '#F59E0B', wooden: '#92400E', marble: '#64748B', general: '#14B8A6'
 };
+// ADDED: Interior Services icons/colours
+SERVICE_KEYS.forEach(k => { SECTION_ICONS[k] = SERVICE_DEFS[k].icon; SECTION_COLORS[k] = SERVICE_DEFS[k].color; });
+// ADDED (per request): new quotation starts EMPTY — no default rooms / sections; create with ＋ Add or quick chips
+const START_EMPTY = true;
 
 const ROOM_ICONS = {
   mbr: '🛏', cbr: '🛏', hall: '🛋', dining: '🍽', kitchen: '🍳', accessories: '🔧'
@@ -504,6 +511,7 @@ export default function QuotationForm({ user }) {
   const [minimized, setMinimized] = useState({}); // track which room/section cards are collapsed
   const toggleMinimize = (key) => setMinimized(prev => ({ ...prev, [key]: !prev[key] }));
   const [rooms, setRooms] = useState(() => {
+    if (START_EMPTY) return {}; // ADDED: start empty
     const r = {};
     Object.entries(DEFAULT_ROOMS).forEach(([k, v]) => {
       r[k] = {
@@ -516,6 +524,7 @@ export default function QuotationForm({ user }) {
     return r;
   });
   const [sections, setSections] = useState(() => {
+    if (START_EMPTY) return {}; // ADDED: start empty
     const s = {};
     Object.entries(INITIAL_SECTIONS).forEach(([k, v]) => {
       s[k] = { ...v, items: v.items.map(i => ({ ...i, nos: 0, unitCost: 0 })) };
@@ -653,6 +662,17 @@ export default function QuotationForm({ user }) {
     setNewRoomName('');
     setShowAddRoom(false);
   };
+
+  // ADDED: quick-add helpers (Rooms / Accessories / Interior Services / Other Works)
+  const addQuickRoom = (c) => { setRooms(prev => prev[c.key] ? prev : insertRoom(prev, c.key, blankRoom(c.label, c.color))); setActiveRoom(c.key); toast.success(`${c.label} added`); };
+  const addAccessoriesCard = () => { setRooms(prev => prev.accessories ? prev : { ...prev, accessories: blankAccessories() }); toast.success('Accessories added'); };
+  // ADDED: create a new (custom) Interior Service by name
+  const addCustomService = (name) => {
+    if (Object.values(sections).some(s => String(s.label || '').trim().toLowerCase() === name.toLowerCase())) { toast.error(`"${name}" already exists`); return false; }
+    const key = newServiceKey(); SECTION_ICONS[key] = CUSTOM_SERVICE.icon; SECTION_COLORS[key] = CUSTOM_SERVICE.color;
+    setSections(prev => insertSection(prev, key, blankSection(key, name))); toast.success(`${name} added`); return true;
+  };
+  const addQuickSection = (c) => { setSections(prev => prev[c.key] ? prev : insertSection(prev, c.key, blankSection(c.key, c.label))); toast.success(`${c.label} added`); };
 
   const deleteRoom = (roomKey) => {
     const keys = Object.keys(rooms).filter(k => k !== roomKey);
@@ -831,6 +851,7 @@ export default function QuotationForm({ user }) {
       setClientName(''); setClientPhone(''); setClientAltPhone(''); setFullAddress(''); setPincode(''); setVillaNumber(''); setSiteName(''); setLocation(''); setSmName(user && user.role === 'manager' ? user.display : ''); setSmPhone(''); setSmDesignation(''); setSmBranch(''); setProjectStartDate(''); setProjectEndDate(''); setProjectType(''); setFloorPlan(null); setPlan2D(null); setPlan3D(null); setTcItems([...DEFAULT_TC]); setNoteItems([...DEFAULT_NOTES]); setPayStages(DEFAULT_PAY_STAGES.map(s => ({ ...s })));
       setRooms(() => { const r = {}; Object.entries(DEFAULT_ROOMS).forEach(([k, v]) => { r[k] = { ...v, items: v.items.map(i => ({ ...i, width:0, height:0, nos:0, unitCost:0, remarks:'' })), pdfFile: null, pdfName: '' }; }); return r; });
       setSections(() => { const s = {}; Object.entries(INITIAL_SECTIONS).forEach(([k, v]) => { s[k] = { ...v, items: v.items.map(i => ({ ...i })) }; }); return s; });
+      if (START_EMPTY) { setRooms({}); setSections({}); } // ADDED: next quotation starts empty too
       setGstPercent(0); setDiscountPercent(0); setDiscountAmtInput(0);
       navigate('/quotations');
     } catch (err) {
@@ -1169,6 +1190,7 @@ export default function QuotationForm({ user }) {
                   );
                 })}
               </div>
+              <QuickAddChips empty={!Object.keys(rooms).some(k => k !== 'accessories')} emptyText="No rooms yet — click" actionLabel="Add Room" onAction={() => setShowAddRoom(true)} chips={QUICK_ROOMS.filter(c => !rooms[c.key])} onPick={addQuickRoom} />{/* ADDED: empty start + quick add */}
             </div>
             {/* ADDED: Accessories in its own row, below the wood-work rooms */}
             {rooms.accessories && (<>
@@ -1184,6 +1206,34 @@ export default function QuotationForm({ user }) {
               </div>
             </div>
             </>)}
+            {/* ADDED: no Accessories yet → empty box with ＋ Add Accessories */}
+            {!rooms.accessories && (<>
+            <div className="nav-overview-divider" />
+            <div className="nav-overview-group">
+              <div className="nav-overview-group-title">🔩 Accessories</div>
+              <QuickAddChips empty emptyText="No accessories yet — click" actionLabel="Add Accessories" onAction={addAccessoriesCard} />
+            </div>
+            </>)}
+            {/* ADDED: Interior Services — False Ceiling / Granite / Lighting / Electrical */}
+            <div className="nav-overview-divider" />
+            <div className="nav-overview-group">
+              <div className="nav-overview-group-title qa-title-row"><span>🛠 Interior Services</span><AddNameInline label="Add Service" placeholder="Service name (e.g. Painting)" onAdd={addCustomService} /></div>
+              {Object.keys(sections).some(isServiceKey) && (
+              <div className="nav-overview-grid">
+                {Object.entries(sections).filter(([k]) => isServiceKey(k)).map(([key, sec]) => {
+                  const secTotal = sectionTotals[key] || 0;
+                  return (
+                    <a key={key} href={"#room-card-sec_" + key} className="nav-overview-item" style={{ '--chip-color': SECTION_COLORS[key] }}>
+                      <span className="nav-ov-icon">{SECTION_ICONS[key]}</span>
+                      <span className="nav-ov-name">{sec.label}</span>
+                      <span className="nav-ov-amt">{secTotal === 0 ? '—' : '₹' + secTotal.toLocaleString('en-IN')}</span>
+                    </a>
+                  );
+                })}
+              </div>
+              )}
+              <QuickAddChips empty={!Object.keys(sections).some(isServiceKey)} emptyText="No services yet — use ＋ Add Service or" chips={QUICK_SERVICES.filter(c => !sections[c.key])} onPick={addQuickSection} />
+            </div>
             <div className="nav-overview-divider" />
             <div className="nav-overview-group">
               <div className="nav-overview-group-title-row">
@@ -1202,6 +1252,7 @@ export default function QuotationForm({ user }) {
               </div>
               <div className="nav-overview-grid">
                 {Object.entries(sections).map(([key, sec]) => {
+                  if (isServiceKey(key)) return null; // ADDED: services shown in Interior Services row
                   const secTotal = sectionTotals[key] || 0;
                   return (
                     <a key={key} href={"#room-card-sec_" + key} className="nav-overview-item" style={{ '--chip-color': SECTION_COLORS[key] }}>
@@ -1212,6 +1263,7 @@ export default function QuotationForm({ user }) {
                   );
                 })}
               </div>
+              <QuickAddChips empty={!Object.keys(sections).some(k => !isServiceKey(k))} emptyText="No sections yet — click" actionLabel="Add Section" onAction={() => setShowAddSection(true)} chips={QUICK_OTHER.filter(c => !sections[c.key])} onPick={addQuickSection} />{/* ADDED: empty start + quick add */}
             </div>
           </div>
 

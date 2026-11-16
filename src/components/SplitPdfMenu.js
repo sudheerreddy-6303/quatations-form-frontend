@@ -1,12 +1,13 @@
 // ── ADDED (per request): "Separate PDFs" dropdown — Wood Work / Accessories / Other Works / All ──
 import React from 'react';
 import ReactDOM from 'react-dom';
-import { SPLIT_PARTS, availableParts, downloadSplitPDFs } from '../utils/splitQuotation';
+import { SPLIT_PARTS, availableParts, downloadSplitPDFs, partsFor } from '../utils/splitQuotation';
 
 export default function SplitPdfMenu({ data, getData, className, style, label = '⬇ Separate PDFs ▾' }) {
   const [open, setOpen] = React.useState(false);
   const [pos, setPos] = React.useState({ top: 0, left: 0 });
   const [avail, setAvail] = React.useState(null);
+  const [parts, setParts] = React.useState(null); // ADDED: incl. custom services
   const btnRef = React.useRef(null);
   const load = async () => (data || (getData ? await getData() : null));
   const toggle = async (e) => {
@@ -16,7 +17,7 @@ export default function SplitPdfMenu({ data, getData, className, style, label = 
     const left = Math.min(r.left, window.innerWidth - 300);
     setPos({ top: r.bottom + 6, left: Math.max(8, left) });
     setOpen(true);
-    try { const d = await load(); setAvail(d ? availableParts(d).map(p => p.key) : []); } catch { setAvail([]); }
+    try { const d = await load(); setParts(d ? partsFor(d) : null); setAvail(d ? availableParts(d).map(p => p.key) : []); } catch { setAvail([]); }
   };
   React.useEffect(() => {
     if (!open) return;
@@ -38,7 +39,7 @@ export default function SplitPdfMenu({ data, getData, className, style, label = 
       <button ref={btnRef} type="button" className={className || 'action-btn download'} style={style} onClick={toggle}>{label}</button>
       {open && ReactDOM.createPortal(
         <div onClick={e => e.stopPropagation()} style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 100001, background: '#fff', border: '1px solid #E5E7EB', borderRadius: 12, boxShadow: '0 12px 32px rgba(0,0,0,.18)', padding: 6, width: 290 }}>
-          {SPLIT_PARTS.map(p => (
+          {(parts || SPLIT_PARTS).map(p => (
             <Item key={p.key} icon={p.icon} title={`${p.label} PDF`} hint={p.hint} onClick={() => go(p.key)} disabled={avail !== null && !avail.includes(p.key)} />
           ))}
           <div style={{ height: 1, background: '#F0F0F0', margin: '4px 6px' }} />

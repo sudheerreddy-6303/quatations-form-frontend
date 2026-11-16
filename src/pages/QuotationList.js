@@ -152,6 +152,13 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
   const [open, setOpen]   = React.useState(false);
   const [pos,  setPos]    = React.useState({ top:0, left:0 });
   const btnRef = React.useRef();
+  // ADDED: "Separate PDFs" folds into one item that opens its list (keeps the menu short enough for the screen)
+  const [splitOpen, setSplitOpen] = React.useState(false);
+  const SPLIT_MENU = [
+    ['wood','🪵','Rooms PDF','#7C3AED'], ['accessories','🔩','Accessories PDF','#B45309'],
+    ['services','🛠','Interior Services PDF','#0369A1'], // CHANGED: one PDF for all Interior Services
+    ['other','📐','Other Works PDF','#047857'],
+  ];
 
   // Close on outside click only (no scroll listener — scroll was causing freezes)
   React.useEffect(() => {
@@ -214,6 +221,20 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
       {label}
     </button>
   );
+  // ADDED: Separate PDFs group (tap to open)
+  const splitPdfItems = (<>
+    <button type="button" onMouseDown={e => e.stopPropagation()} onClick={e => { e.stopPropagation(); setSplitOpen(v => !v); }}
+      style={{ display:'flex', alignItems:'center', gap:10, width:'100%', padding:'11px 16px', background: splitOpen ? '#FFF5F1' : 'none',
+        border:'none', borderTop:'1px solid #f3f3f3', cursor:'pointer', textAlign:'left', fontSize:13, color:'#E8471C',
+        fontFamily:"'DM Sans',sans-serif", fontWeight:600, minHeight:44 }}>
+      <span style={{fontSize:15, width:22, textAlign:'center'}}>📑</span>
+      Separate PDFs
+      <span style={{marginLeft:'auto', fontSize:11}}>{splitOpen ? '▲' : '▼'}</span>
+    </button>
+    {splitOpen && SPLIT_MENU.map(([k, ic, lb, col]) => (
+      <div key={k} style={{ paddingLeft:14, background:'#FFFBF9' }}><Item icon={ic} label={lb} color={col} onClick={() => onSplitPdf(k)} /></div>
+    ))}
+  </>);
 
   return (
     <>
@@ -257,6 +278,7 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
             maxWidth:'calc(100vw - 16px)',
             overflow:'hidden',
             animation:'ddFadeIn 0.14s ease',
+            maxHeight:`calc(100vh - ${pos.top}px - 8px)`, overflowY:'auto', // ADDED: long menu scrolls instead of running off the screen
           }}
         >
           <style>{`@keyframes ddFadeIn{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}`}</style>
@@ -272,7 +294,7 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
               <Item icon="⚰️" label="Mark Dead"  color="#6B7280" onClick={()=>onLeadStatus('Dead')} />
               <Item icon="⬇"   label="Download PDF"     color="#374151" onClick={onDownload} sep />
               <Item icon="🖨"   label="Print PDF"        color="#374151" onClick={onPrint} />
-              {onSplitPdf && <><Item icon="🪵" label="Wood Work PDF" color="#7C3AED" onClick={()=>onSplitPdf('wood')} sep /><Item icon="🔩" label="Accessories PDF" color="#B45309" onClick={()=>onSplitPdf('accessories')} /><Item icon="⚡" label="Other Works PDF" color="#047857" onClick={()=>onSplitPdf('other')} /></>}{/* ADDED: separate PDFs */}
+              {onSplitPdf && splitPdfItems}{/* ADDED: separate PDFs */}
               {isAdmin && onVersions && <Item icon="🕘" label="Version History" color="#7C3AED" onClick={onVersions} />}
             </>
           ) : (
@@ -289,7 +311,7 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
                 <Item icon="🏆" label="Mark Complete"  color="#CA8A04" onClick={onComplete} />}
               <Item icon="⬇"   label="Download PDF"   color="#374151" onClick={onDownload} sep />
               <Item icon="🖨"   label="Print PDF"      color="#374151" onClick={onPrint} />
-              {onSplitPdf && <><Item icon="🪵" label="Wood Work PDF" color="#7C3AED" onClick={()=>onSplitPdf('wood')} sep /><Item icon="🔩" label="Accessories PDF" color="#B45309" onClick={()=>onSplitPdf('accessories')} /><Item icon="⚡" label="Other Works PDF" color="#047857" onClick={()=>onSplitPdf('other')} /></>}{/* ADDED: separate PDFs */}
+              {onSplitPdf && splitPdfItems}{/* ADDED: separate PDFs */}
               {isAdmin && onVersions && <Item icon="🕘" label="Version History" color="#7C3AED" onClick={onVersions} />}
               {canDelete   && <Item icon="🗑" label="Delete"        color="#B91C1C" onClick={onDelete} sep />}
             </>
@@ -1502,6 +1524,10 @@ import { calcRateDiscountTotal } from '../utils/roomData'; // ADDED: Discounted 
 import { getBranchDetails } from '../utils/branchDetails'; // ADDED: branch-wise address + bank in View
 import { RowPhotoCell } from '../components/RowPhoto'; // ADDED: row photo
 import SplitPdfMenu from '../components/SplitPdfMenu'; // ADDED: separate PDFs (Wood Work / Accessories / Other Works)
+import EditPlanFiles, { normPlan } from '../components/EditPlanFiles'; // ADDED: plans in Edit
+import QuickAddChips, { AddNameInline } from '../components/QuickAddChips'; // ADDED: quick add (Rooms / Accessories / Interior Services / Other Works)
+import { CUSTOM_SERVICE, newServiceKey, isCustomServiceKey } from '../utils/interiorServices'; // ADDED: custom services
+import { SERVICE_KEYS, SERVICE_DEFS, isServiceKey, isSectionsFormat, QUICK_ROOMS, QUICK_OTHER, QUICK_SERVICES, blankRoom, blankAccessories, blankSection, insertRoom, insertSection } from '../utils/interiorServices'; // ADDED: Interior Services
 import { downloadSplitPDFs } from '../utils/splitQuotation'; // ADDED: separate PDFs
 import { hasVersions, versionLabel, fmtVDate, fmtVAmt } from '../utils/versionInfo'; // ADDED: version + revision history
 import { printQuotation } from '../utils/printQuotation';
@@ -1534,6 +1560,12 @@ const SECTION_ICONS = {
 const SECTION_COLORS = {
   electrical: '#F59E0B', wooden: '#92400E', marble: '#64748B', general: '#14B8A6'
 };
+// ADDED: Interior Services (False Ceiling / Granite / Lighting / Electrical)
+SERVICE_KEYS.forEach(k => { SECTION_ICONS[k] = SERVICE_DEFS[k].icon; SECTION_COLORS[k] = SERVICE_DEFS[k].color; });
+SECTION_META.falseceiling = { label: 'False Ceiling', color: '#4338CA', bg: '#EEF2FF' };
+SECTION_META.granite      = { label: 'Granite',       color: '#57534E', bg: '#F5F5F4' };
+SECTION_META.lighting     = { label: 'Lighting',      color: '#A16207', bg: '#FEFCE8' };
+const START_EMPTY_EDIT = true; // ADDED (per request): Edit shows only saved rooms/sections — no empty default ones
 
 const DEFAULT_TC = [
   'Payment Terms: Invoice must be paid within 25 days from the issue date.',
@@ -2757,7 +2789,7 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
 
   const rooms    = data.rooms || {};
   const rawCd    = data.ceiling_data || {};
-  const isNewFmt = rawCd.electrical||rawCd.wooden||rawCd.marble||rawCd.general;
+  const isNewFmt = rawCd.electrical||rawCd.wooden||rawCd.marble||rawCd.general||isSectionsFormat(rawCd); // CHANGED: also new service sections
   const sections = isNewFmt ? rawCd : null;
   const cd       = !isNewFmt ? rawCd : {};
 
@@ -3251,6 +3283,10 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
 
   // ── All fields pre-filled from data ─────────────────────────
   const [projectType,    setProjectType]    = useState(data.project_type || '');
+  // ADDED: uploaded Floor Plan / 2D / 3D shown in Edit; only changed ones are sent on save
+  const [plans, setPlans] = useState(() => ({ floor_plan: normPlan(data.floor_plan, 'Floor Plan'), plan_2d: normPlan(data.plan_2d, '2D Plan'), plan_3d: normPlan(data.plan_3d, '3D Plan') }));
+  const [plansChanged, setPlansChanged] = useState({});
+  const changePlan = (k, v) => { setPlans(p => ({ ...p, [k]: v })); setPlansChanged(c => ({ ...c, [k]: true })); };
   const [clientName,     setClientName]     = useState(data.customer_name || '');
   const [clientPhone,    setClientPhone]    = useState(data.customer_phone || data.mobile || '');
   const [clientAltPhone, setClientAltPhone] = useState(data.customer_alt_phone || '');
@@ -3317,7 +3353,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
       };
     });
     // Add any default rooms that don't exist yet
-    Object.entries(DEFAULT_ROOMS).forEach(([k, v]) => {
+    if (!START_EMPTY_EDIT) Object.entries(DEFAULT_ROOMS).forEach(([k, v]) => { // CHANGED: no empty default rooms added (add with ＋ chips)
       if (!r[k]) r[k] = { ...v, items: v.items.map(i=>({...i,width:0,height:0,nos:0,unitCost:0,remarks:''})), pdfFile: null, pdfName: '' };
     });
     return r;
@@ -3346,6 +3382,19 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
           if (!SECTION_ICONS[k])  SECTION_ICONS[k]  = '📦';
         }
       });
+    }
+    // ADDED: show only the sections that were saved (in saved order) — incl. False Ceiling / Granite / Lighting;
+    // no empty default sections are added (add them with the ＋ chips). Very old (legacy ceiling) quotations keep the old behaviour.
+    if (START_EMPTY_EDIT && (isSectionsFormat(rawCd) || Object.keys(rawCd).length === 0)) {
+      const only = {};
+      Object.entries(rawCd).forEach(([k, v]) => {
+        if (!v || !Array.isArray(v.items)) return;
+        only[k] = s[k] && INITIAL_SECTIONS[k] ? s[k] : { ...v, items: v.items.map(i=>({...i})), isCustom: !INITIAL_SECTIONS[k] && !isServiceKey(k) };
+        if (isCustomServiceKey(k)) { SECTION_COLORS[k] = CUSTOM_SERVICE.color; SECTION_ICONS[k] = CUSTOM_SERVICE.icon; } // ADDED: custom service
+        if (!SECTION_COLORS[k]) SECTION_COLORS[k] = '#8B5CF6';
+        if (!SECTION_ICONS[k])  SECTION_ICONS[k]  = '📦';
+      });
+      return only;
     }
     return s;
   });
@@ -3404,6 +3453,16 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
   const deleteRoom = (rk) => {
     setRooms(prev=>{ const u={...prev}; delete u[rk]; return u; });
   };
+  // ADDED: quick-add helpers (Rooms / Accessories / Interior Services / Other Works)
+  const addQuickRoom = (c) => { setRooms(prev => prev[c.key] ? prev : insertRoom(prev, c.key, blankRoom(c.label, c.color))); toast.success(`${c.label} added`); };
+  const addAccessoriesCard = () => { setRooms(prev => prev.accessories ? prev : { ...prev, accessories: blankAccessories() }); toast.success('Accessories added'); };
+  // ADDED: create a new (custom) Interior Service by name
+  const addCustomService = (name) => {
+    if (Object.values(sections).some(s => String(s.label || '').trim().toLowerCase() === name.toLowerCase())) { toast.error(`"${name}" already exists`); return false; }
+    const key = newServiceKey(); SECTION_ICONS[key] = CUSTOM_SERVICE.icon; SECTION_COLORS[key] = CUSTOM_SERVICE.color;
+    setSections(prev => insertSection(prev, key, blankSection(key, name))); toast.success(`${name} added`); return true;
+  };
+  const addQuickSection = (c) => { setSections(prev => prev[c.key] ? prev : insertSection(prev, c.key, blankSection(c.key, c.label))); toast.success(`${c.label} added`); };
 
   const addNewSection = () => {
     const name = newSectionName.trim();
@@ -3473,6 +3532,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
         project_end_date:   projectEndDate   || null,
         rooms: roomsToSave, accessories: roomsToSave.accessories,
         ceiling_data: sections,
+        ...Object.fromEntries(Object.keys(plansChanged).map(k => [k, plans[k] || null])), // ADDED: only plans changed in Edit
         tc_items: Array.isArray(tcItems) ? tcItems : (typeof tcItems === 'string' ? JSON.parse(tcItems) : []),
         note_items: Array.isArray(noteItems) ? noteItems : (typeof noteItems === 'string' ? JSON.parse(noteItems) : []),
         discount_percent: discountPercent, discount_amount: discountAmount,
@@ -3571,6 +3631,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                 </label>
               ))}
             </div>
+            <EditPlanFiles plans={plans} onChange={changePlan} />{/* ADDED: Floor Plan / 2D / 3D in Edit */}
           </section>
 
           {/* 02 CLIENT */}
@@ -3726,6 +3787,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                     );
                   })}
                 </div>
+                <QuickAddChips empty={!Object.keys(rooms).some(k => k !== 'accessories')} emptyText="No rooms yet — click" actionLabel="Add Room" onAction={()=>setShowAddRoom(true)} chips={QUICK_ROOMS.filter(c => !rooms[c.key])} onPick={addQuickRoom} />{/* ADDED: quick add */}
               </div>
               {/* ADDED: Accessories in its own row, below the wood-work rooms */}
               {rooms.accessories && (()=>{ const ta=rooms.accessories.items.reduce((s,it)=>s+calcRoomAccTotal(it),0); return (<>
@@ -3741,6 +3803,34 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                 </div>
               </div>
               </>); })()}
+              {/* ADDED: no Accessories → ＋ Add Accessories */}
+              {!rooms.accessories && (<>
+              <div className="nav-overview-divider" />
+              <div className="nav-overview-group">
+                <div className="nav-overview-group-title">🔩 Accessories</div>
+                <QuickAddChips empty emptyText="No accessories yet — click" actionLabel="Add Accessories" onAction={addAccessoriesCard} />
+              </div>
+              </>)}
+              {/* ADDED: Interior Services — False Ceiling / Granite / Lighting / Electrical */}
+              <div className="nav-overview-divider" />
+              <div className="nav-overview-group">
+                <div className="nav-overview-group-title qa-title-row"><span>🛠 Interior Services</span><AddNameInline label="Add Service" placeholder="Service name (e.g. Painting)" onAdd={addCustomService} /></div>
+                {Object.keys(sections).some(isServiceKey) && (
+                <div className="nav-overview-grid">
+                  {Object.entries(sections).filter(([k])=>isServiceKey(k)).map(([key,sec])=>{
+                    const t=sectionTotals[key]||0;
+                    return (
+                      <a key={key} href={"#edit-card-sec_"+key} className="nav-overview-item" style={{'--chip-color':SECTION_COLORS[key]||'#888'}}>
+                        <span className="nav-ov-icon">{SECTION_ICONS[key]||'📦'}</span>
+                        <span className="nav-ov-name">{sec.label}</span>
+                        <span className="nav-ov-amt">{t===0?'—':'₹'+t.toLocaleString('en-IN')}</span>
+                      </a>
+                    );
+                  })}
+                </div>
+                )}
+                <QuickAddChips empty={!Object.keys(sections).some(isServiceKey)} emptyText="No services yet — use ＋ Add Service or" chips={QUICK_SERVICES.filter(c => !sections[c.key])} onPick={addQuickSection} />
+              </div>
               <div className="nav-overview-divider" />
               <div className="nav-overview-group">
                 <div className="nav-overview-group-title-row">
@@ -3759,6 +3849,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                 </div>
                 <div className="nav-overview-grid">
                   {Object.entries(sections).map(([key,sec])=>{
+                    if (isServiceKey(key)) return null; // ADDED: services shown in Interior Services row
                     const t=sectionTotals[key]||0;
                     return (
                       <a key={key} href={"#edit-card-sec_"+key} className="nav-overview-item" style={{'--chip-color':SECTION_COLORS[key]||'#888'}}>
@@ -3769,6 +3860,7 @@ function EditModal({ data, onClose, onSaved, onDelete, canDelete = true }) {
                     );
                   })}
                 </div>
+                <QuickAddChips empty={!Object.keys(sections).some(k => !isServiceKey(k))} emptyText="No sections yet — click" actionLabel="Add Section" onAction={()=>setShowAddSection(true)} chips={QUICK_OTHER.filter(c => !sections[c.key])} onPick={addQuickSection} />{/* ADDED: quick add */}
               </div>
             </div>
 

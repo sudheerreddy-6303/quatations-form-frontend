@@ -4,6 +4,7 @@ import { calcArea, calcTotal, calcRoomTotal } from '../utils/roomData';
 import { calcRateDiscountTotal } from '../utils/roomData'; // ADDED: Discounted Rate totals breakdown
 import { getBranchDetails } from '../utils/branchDetails'; // ADDED: branch-wise address + bank
 import { hasVersions, versionLabel, fmtVDate, fmtVAmt } from '../utils/versionInfo'; // ADDED: version + revision history
+import { SERVICE_KEYS, SERVICE_DEFS, isSectionsFormat } from '../utils/interiorServices'; // ADDED: Interior Services
 
 const API_BASE = (process.env.REACT_APP_API_URL || 'http://localhost:5001/api').trim();
 const LOGO_URL = `${API_BASE}/logo.png`;
@@ -15,6 +16,8 @@ const SECTION_META = {
   marble:     { label: 'Marble & Plumbing' },
   general:    { label: 'General' },
 };
+// ADDED: Interior Services labels (Electrical keeps its existing label)
+SERVICE_KEYS.forEach(k => { if (!SECTION_META[k]) SECTION_META[k] = { label: SERVICE_DEFS[k].label }; });
 
 const C = {
   brand:     '#E8471C',
@@ -276,7 +279,7 @@ export function QuotationPDF({ data }) {
   const branchInfo = getBranchDetails(data && data.site_manager_branch); // ADDED: branch-wise address + bank
   const rooms = data.rooms || {};
   const rawCd = data.ceiling_data || {};
-  const isNewFormat = rawCd.ceiling || rawCd.electrical || rawCd.wooden || rawCd.marble || rawCd.general;
+  const isNewFormat = rawCd.ceiling || rawCd.electrical || rawCd.wooden || rawCd.marble || rawCd.general || isSectionsFormat(rawCd); // CHANGED: also False Ceiling / Granite / Lighting / custom sections
   const sections = isNewFormat ? rawCd : null;
 
   // Legacy ceiling fallback
@@ -431,7 +434,7 @@ export function QuotationPDF({ data }) {
         </View>
         </>)}
         {/* ADDED: separate PDF (Wood Work / Accessories) — its own subtotal banner; Other Works has no room banner */}
-        {data.__part && data.__part !== 'other' && (
+        {data.__part && (data.__part === 'wood' || data.__part === 'accessories') && (
         <View style={s.totalInteriorRow}>
           <Text style={s.totalInteriorLabel}>{data.__partLabel} Subtotal</Text>
           <Text style={s.totalInteriorValue}>{fmt(totalInterior)}</Text>
