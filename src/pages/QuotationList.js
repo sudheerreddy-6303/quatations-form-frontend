@@ -148,6 +148,7 @@ function CompletionBar({ quotationId }) {
 function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdits,
   onVersions,
   onSplitPdf, // ADDED: separate PDFs
+  onExportExcel, // ADDED: Export Excel
   onView, onEdit, onRequestEdit, onPayment, onDownload, onPrint, onDelete, onProjectMgmt, onVisitReport, onCompletion, onComplete, onFollowup, onLeadStatus }) {
   const [open, setOpen]   = React.useState(false);
   const [pos,  setPos]    = React.useState({ top:0, left:0 });
@@ -294,6 +295,7 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
               <Item icon="⚰️" label="Mark Dead"  color="#6B7280" onClick={()=>onLeadStatus('Dead')} />
               <Item icon="⬇"   label="Download PDF"     color="#374151" onClick={onDownload} sep />
               <Item icon="🖨"   label="Print PDF"        color="#374151" onClick={onPrint} />
+              {onExportExcel && <Item icon="📊" label="Export Excel" color="#047857" onClick={onExportExcel} />}{/* ADDED: Export Excel */}
               {onSplitPdf && splitPdfItems}{/* ADDED: separate PDFs */}
               {isAdmin && onVersions && <Item icon="🕘" label="Version History" color="#7C3AED" onClick={onVersions} />}
             </>
@@ -311,6 +313,7 @@ function ActionDropdown({ q, canEdit, isManager, isAdmin, canDelete, approvedEdi
                 <Item icon="🏆" label="Mark Complete"  color="#CA8A04" onClick={onComplete} />}
               <Item icon="⬇"   label="Download PDF"   color="#374151" onClick={onDownload} sep />
               <Item icon="🖨"   label="Print PDF"      color="#374151" onClick={onPrint} />
+              {onExportExcel && <Item icon="📊" label="Export Excel" color="#047857" onClick={onExportExcel} />}{/* ADDED: Export Excel */}
               {onSplitPdf && splitPdfItems}{/* ADDED: separate PDFs */}
               {isAdmin && onVersions && <Item icon="🕘" label="Version History" color="#7C3AED" onClick={onVersions} />}
               {canDelete   && <Item icon="🗑" label="Delete"        color="#B91C1C" onClick={onDelete} sep />}
@@ -1525,6 +1528,7 @@ import { getBranchDetails } from '../utils/branchDetails'; // ADDED: branch-wise
 import { RowPhotoCell } from '../components/RowPhoto'; // ADDED: row photo
 import SplitPdfMenu from '../components/SplitPdfMenu'; // ADDED: separate PDFs (Wood Work / Accessories / Other Works)
 import EditPlanFiles, { normPlan } from '../components/EditPlanFiles'; // ADDED: plans in Edit
+import { exportQuotationExcel } from '../utils/exportExcel'; // ADDED: Export Excel
 import QuickAddChips, { AddNameInline } from '../components/QuickAddChips'; // ADDED: quick add (Rooms / Accessories / Interior Services / Other Works)
 import { CUSTOM_SERVICE, newServiceKey, isCustomServiceKey } from '../utils/interiorServices'; // ADDED: custom services
 import { SERVICE_KEYS, SERVICE_DEFS, isServiceKey, isSectionsFormat, QUICK_ROOMS, QUICK_OTHER, QUICK_SERVICES, blankRoom, blankAccessories, blankSection, insertRoom, insertSection } from '../utils/interiorServices'; // ADDED: Interior Services
@@ -2963,6 +2967,7 @@ function ViewModal({ data, onClose, onDelete, canDelete = true }) {
             <button className="action-btn download" onClick={handleDownload}>⬇ Download PDF</button>
             <SplitPdfMenu data={data} />{/* ADDED: separate PDFs */}
             <button className="action-btn print" onClick={handlePrint}>🖨 Print</button>
+            <button className="action-btn" style={{background:'#ECFDF5',color:'#047857',border:'1.5px solid #059669'}} onClick={async()=>{ toast.loading('Preparing Excel…',{id:'xl'}); try { await exportQuotationExcel(data); toast.success('Excel downloaded!',{id:'xl'}); } catch(e) { console.error('Export Excel:', e); toast.error('Excel export failed',{id:'xl'}); } }}>📊 Excel</button>{/* ADDED: Export Excel */}
             {canDelete && <button className="action-btn delete-btn" onClick={()=>onDelete&&onDelete(data.id)}>🗑 Delete</button>}
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
@@ -4653,6 +4658,12 @@ export default function QuotationList({ user = { role: 'admin' } }) {
     try { const res=await api.get(`/quotations/${id}`); await downloadSplitPDFs(res.data.data, part); }
     catch { toast.error('Failed',{id:'split'}); }
   };
+  // ADDED: Export Excel from the Actions menu
+  const handleExportExcel = async (id) => {
+    toast.loading('Preparing Excel…',{id:'xl'});
+    try { const res=await api.get(`/quotations/${id}`); await exportQuotationExcel(res.data.data); toast.success('Excel downloaded!',{id:'xl'}); }
+    catch (e) { console.error('Export Excel:', e); toast.error('Excel export failed',{id:'xl'}); }
+  };
   const handleDownload = async (id) => {
     const res=await api.get(`/quotations/${id}`); const d=res.data.data;
     toast.loading('Generating…',{id:'dl'});
@@ -5182,6 +5193,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                     onPayment={()=>handlePayment(q.id)}
                     onDownload={()=>handleDownload(q.id)}
                     onSplitPdf={(part)=>handleSplitPdf(q.id, part)}
+                    onExportExcel={()=>handleExportExcel(q.id)}
                     onPrint={()=>handlePrint(q.id)}
                     onDelete={()=>handleDelete(q.id)}
                     onProjectMgmt={(isManager||isAdmin) && q.project_status==='Booked' ? ()=>{ setPmProjectId(q.id); setShowProjectMgmt(true); } : null}
@@ -5277,6 +5289,7 @@ export default function QuotationList({ user = { role: 'admin' } }) {
                     onPayment={()=>handlePayment(q.id)}
                     onDownload={()=>handleDownload(q.id)}
                     onSplitPdf={(part)=>handleSplitPdf(q.id, part)}
+                    onExportExcel={()=>handleExportExcel(q.id)}
                     onPrint={()=>handlePrint(q.id)}
                     onDelete={()=>handleDelete(q.id)}
                     onProjectMgmt={(isManager||isAdmin) && q.project_status==='Booked' ? ()=>{ setPmProjectId(q.id); setShowProjectMgmt(true); } : null}
